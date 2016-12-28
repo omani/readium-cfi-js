@@ -1,3 +1,25 @@
+/////////////////////////////////////////////
+//////////////// Express ////////////////////
+/////////////////////////////////////////////
+
+var express = require('express')
+var app = express()
+
+app.post('/test', function (req, res) {
+  res.send('test caught')
+})
+
+app.get('*', function (req, res) {
+  res.sendFile(path.join(process.cwd(), req.originalUrl.replace(/\/?(\?.*)?$/, '')))
+})
+
+app.listen(8080, function () {
+  console.log('Listening on port 8080!')
+})
+
+/////////////////////////////////////////////
+/////////////////////////////////////////////
+
 
 var networkInterfaces = require('os').networkInterfaces()
 

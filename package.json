@@ -47,7 +47,8 @@
   "dependencies": {
     "parallelshell": "latest",
     "opener": "latest",
-    "http-server": "danielweck/http-server"
+    "http-server": "danielweck/http-server",
+    "express": "4.14.0"
   },
   "devDependencies": {
     "requirejs": "latest",
