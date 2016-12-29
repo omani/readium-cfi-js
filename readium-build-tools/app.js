@@ -1,17 +1,17 @@
 // requires
-let express = require('express')
-let app = express()
-let fs = require('fs');
-let path = require('path');
-let mysql = require('mysql')
+var express = require('express')
+var app = express()
+var fs = require('fs');
+var path = require('path');
+var mysql = require('mysql')
 
 // get process arguments
-let args = process.argv.slice(2);
+var args = process.argv.slice(2);
 
 
 // set the port
-let PORT = 7777;
-for (let i = 0; i < args.length; i++) {
+var PORT = 7777;
+for (var i = 0; i < args.length; i++) {
     if (args[i] === "-p") {
         if (++i < args.length) PORT = args[i];
         console.log(PORT);
@@ -20,8 +20,8 @@ for (let i = 0; i < args.length; i++) {
 }
 
 // set the app path
-let PATH = '/dev/index_RequireJS_no-optimize.html';
-for (let i = 0; i < args.length; i++) {
+var PATH = '/dev/index_RequireJS_no-optimize.html';
+for (var i = 0; i < args.length; i++) {
     if (args[i] === "-OPEN") {
         args.splice(i, 1);
         
@@ -37,7 +37,7 @@ for (let i = 0; i < args.length; i++) {
 
 
 // authenticate
-let bookIds = [1,2,3];
+var bookIds = [1,2,3];
 
 // route RequireJS_config.js properly
 app.get(['/RequireJS_config.js', '/book/RequireJS_config.js'], function (req, res) {
@@ -100,7 +100,7 @@ app.get('/epub_content/epub_library.json', function (req, res) {
   // has bookIds array from authenticate
 
   // look those books up in the database and form the library
-  let connection = mysql.createConnection({
+  var connection = mysql.createConnection({
     host: 'localhost',
     user: 'root',
     password: '',
@@ -126,13 +126,13 @@ app.get('/epub_content/epub_library.json', function (req, res) {
 
 // serve the static files
 app.get('*', function (req, res) {
-  let urlWithoutQuery = req.url.replace(/(\?.*)?$/, '');
-  let urlPieces = urlWithoutQuery.split('/');
-  let staticFile = path.join(process.cwd(), urlWithoutQuery);
+  var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '');
+  var urlPieces = urlWithoutQuery.split('/');
+  var staticFile = path.join(process.cwd(), urlWithoutQuery);
 
   if(fs.existsSync(staticFile)) {
 
-    let bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
+    var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
 
     // check that they have access if this is a book
     if(urlPieces[1] == 'epub_content' && bookIds.indexOf(bookId) == -1) {
