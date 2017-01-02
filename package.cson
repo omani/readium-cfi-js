@@ -103,6 +103,8 @@ dependencies:
 
     "mysql": '2.12.0'
 
+    "body-parser": '1.15.2'
+
 #####################################################################
 # These dependencies can be fetched by using the "--dev" option
 # in "npm install --dev readium-cfi-js".
