@@ -100,7 +100,7 @@ var paramsOk = function(params, reqParams, optParams) {
       return false;
     }
   }
-  if(Object.keys(params).length != numReqParamPresent) {
+  if(Object.keys(reqParams).length != numReqParamPresent) {
     return false;
   }
   return true;
@@ -194,7 +194,7 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
         })
 
         if(req.body.latest_location) {
-          if(!paramsOk(req.body, ['updated_at','latest_location'])) {
+          if(!paramsOk(req.body, ['updated_at','latest_location'],['highlights'])) {
             res.status(400).send();
             return;
           }
@@ -227,7 +227,7 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
         if(req.body.highlights) {
           req.body.highlights.forEach(function(highlight) {
             
-            if(!paramsOk(highlight, ['updated_at','cfi'], ['color','note'])) {
+            if(!paramsOk(highlight, ['updated_at','cfi'], ['color','note','_delete'])) {
               res.status(400).send();
               return;
             }
