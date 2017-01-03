@@ -47,7 +47,8 @@ var connection = mysql.createConnection({
   user: 'root',
   password: '',
   database: 'ReadiumData',
-  multipleStatements: true
+  multipleStatements: true,
+  dateStrings: true
 })
 
 // date and time functions
@@ -55,19 +56,19 @@ var getUTCTimeStamp = function(){
     return parseInt(new Date().getTime() / 1000);
 }
 
-var DateToTimestamp = function(date) {
-  return parseInt(date.getTime() / 1000);
+var notLaterThanNow = function(timestamp){
+    return Math.min(getUTCTimeStamp(), timestamp);
 }
 
-// var mySQLDatetimeToTimestamp = function(mysqlDatetime) {
-//   // Split timestamp into [ Y, M, D, h, m, s ]
-//   var t = mysqlDatetime.split(/[- :]/);
+var mySQLDatetimeToTimestamp = function(mysqlDatetime) {
+  // Split timestamp into [ Y, M, D, h, m, s ]
+  var t = mysqlDatetime.split(/[- :]/);
 
-//   // Apply each element to the Date function
-//   var d = new Date(Date.UTC(t[0], t[1]-1, t[2], t[3], t[4], t[5]));
+  // Apply each element to the Date function
+  var d = new Date(Date.UTC(t[0], t[1]-1, t[2], t[3], t[4], t[5]));
 
-//   return parseInt(d.getTime() / 1000);
-// }
+  return parseInt(d.getTime() / 1000);
+}
 
 var timestampToMySQLDatetime = function(timestamp) {
   var twoDigits = function(d) {
@@ -136,7 +137,7 @@ app.get('/users/:userId/books/:bookId.json', function (req, res) {
     } else {
       var bookUserData = {
         latest_location: row.cfi,
-        updated_at: DateToTimestamp(row.updated_at),
+        updated_at: mySQLDatetimeToTimestamp(row.updated_at),
         highlights: []
       }
 
@@ -144,7 +145,7 @@ app.get('/users/:userId/books/:bookId.json', function (req, res) {
       connection.query('SELECT ' + highlightFields + ' FROM `highlight` WHERE user_id=? AND book_id=?', [req.params.userId, req.params.bookId] , function (err2, rows2, fields2) {
 
         rows2.forEach(function(row2, idx) {
-          rows2[idx].updated_at = DateToTimestamp(row2.updated_at);
+          rows2[idx].updated_at = mySQLDatetimeToTimestamp(row2.updated_at);
         });
 
         bookUserData.highlights = rows2;
@@ -189,11 +190,7 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
 
         var currentHighlightsUpdatedAtTimestamp = {};
         results[1].forEach(function(highlightRow) {
-          if(!paramsOk(highlightRow, ['updated_at','cfi'], ['color','note'])) {
-            res.status(400).send();
-            return;
-          }
-          currentHighlightsUpdatedAtTimestamp[highlightRow.cfi] = DateToTimestamp(highlightRow.updated_at);
+          currentHighlightsUpdatedAtTimestamp[highlightRow.cfi] = mySQLDatetimeToTimestamp(highlightRow.updated_at);
         })
 
         if(req.body.latest_location) {
@@ -201,7 +198,10 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
             res.status(400).send();
             return;
           }
-          if((results[0].length > 0 ? DateToTimestamp(results[0][0].updated_at) : 0) > req.body.updated_at) {
+
+          req.body.updated_at = notLaterThanNow(req.body.updated_at);
+
+          if((results[0].length > 0 ? mySQLDatetimeToTimestamp(results[0][0].updated_at) : 0) > req.body.updated_at) {
             containedOldPatch = true;
           } else {
             var fields = {
@@ -226,10 +226,18 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
 
         if(req.body.highlights) {
           req.body.highlights.forEach(function(highlight) {
+            
+            if(!paramsOk(highlight, ['updated_at','cfi'], ['color','note'])) {
+              res.status(400).send();
+              return;
+            }
+            highlight.updated_at = notLaterThanNow(highlight.updated_at);
+
             if((currentHighlightsUpdatedAtTimestamp[highlight.cfi] || 0) > highlight.updated_at) {
               containedOldPatch = true;
               return;
             }
+
             highlight.updated_at = timestampToMySQLDatetime(highlight.updated_at);
             // since I do not know whether to INSERT or UPDATE, just DELETE them all then then INSERT
             if(highlight._delete) {
