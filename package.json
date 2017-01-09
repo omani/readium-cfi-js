@@ -47,10 +47,11 @@
   "dependencies": {
     "parallelshell": "latest",
     "opener": "latest",
-    "http-server": "danielweck/http-server",
     "express": "4.14.0",
     "mysql": "2.12.0",
-    "body-parser": "1.15.2"
+    "body-parser": "1.15.2",
+    "http": "0.0.0",
+    "aws-sdk": "2.7.21"
   },
   "devDependencies": {
     "requirejs": "latest",

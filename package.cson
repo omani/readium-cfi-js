@@ -96,14 +96,16 @@ dependencies:
     "opener": 'latest'
 
     #"http-server": 'latest'
-    "http-server": 'danielweck/http-server'
+    #"http-server": 'danielweck/http-server'
     # SEE: https://github.com/indexzero/http-server/issues/154
 
     "express": '4.14.0'
 
     "mysql": '2.12.0'
 
-    "body-parser": '1.15.2'
+    "http": '0.0.0'
+
+    "aws-sdk": '2.7.21'
 
 #####################################################################
 # These dependencies can be fetched by using the "--dev" option

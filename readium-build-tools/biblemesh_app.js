@@ -1,27 +1,48 @@
 // requires
-var express = require('express')
-var app = express()
+var express = require('express');
+var app = express();
+var http = require('http');
 var bodyParser = require('body-parser');
 var fs = require('fs');
 var path = require('path');
-var mysql = require('mysql')
+var mysql = require('mysql');
+var AWS = require('aws-sdk');
 
 // get process arguments
 var args = process.argv.slice(2);
 
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
 
 // set the port
-var PORT = 7777;
+var port = normalizePort(process.env.PORT || '8080');
 for (var i = 0; i < args.length; i++) {
     if (args[i] === "-p") {
-        if (++i < args.length) PORT = args[i];
-        console.log(PORT);
+        if (++i < args.length) port = args[i];
+        console.log(port);
         break;
     }
 }
+app.set('port', port);
+
+// Create HTTP server.
+var server = http.createServer(app);
 
 // set the app path
-var PATH = '/dev/index_RequireJS_no-optimize.html';
+var PATH = '/index.html';
 for (var i = 0; i < args.length; i++) {
     if (args[i] === "-OPEN") {
         args.splice(i, 1);
@@ -35,18 +56,26 @@ for (var i = 0; i < args.length; i++) {
         break;
     }
 }
-
+var onDev = PATH != '/index.html';
 
 // authenticate
 var bookIds = [1,2,3];
 
+// setup Amazon S3
+var s3 = new AWS.S3()
+// var myCredentials = new AWS.CognitoIdentityCredentials({IdentityPoolId:''});
+var myConfig = new AWS.Config({
+  // credentials: myCredentials,
+  region: 'us-west-2'
+});
 
 // connect to the database
 var connection = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'ReadiumData',
+  host: process.env.RDS_HOSTNAME || 'localhost',
+  port: process.env.RDS_PORT || '3306',
+  user: process.env.RDS_USERNAME || 'root',
+  password: process.env.RDS_PASSWORD || '',
+  database: process.env.RDS_DB_NAME || 'ReadiumData',
   multipleStatements: true,
   dateStrings: true
 })
@@ -151,7 +180,7 @@ app.get('/users/:userId/books/:bookId.json', function (req, res) {
         bookUserData.highlights = rows2;
         res.send(bookUserData);
 
-      })
+      });
     }
   })
 })
@@ -310,23 +339,47 @@ app.get('/epub_content/epub_library.json', function (req, res) {
 app.get('*', function (req, res) {
   var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '');
   var urlPieces = urlWithoutQuery.split('/');
-  var staticFile = path.join(process.cwd(), urlWithoutQuery);
+  var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
 
-  if(fs.existsSync(staticFile)) {
+  // check that they have access if this is a book
+  if(urlPieces[1] == 'epub_content') {
 
-    var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
-
-    // check that they have access if this is a book
-    if(urlPieces[1] == 'epub_content' && bookIds.indexOf(bookId) == -1) {
-        res.status(403).send({ error: 'Forbidden' });
+    if(bookIds.indexOf(bookId) == -1) {
+      res.status(403).send({ error: 'Forbidden' });
     } else {
-        res.sendFile(staticFile, {
-            dotfiles: "allow"
-        })
+      var params = {
+        Bucket: 'biblemesh-readium',
+        Key: urlWithoutQuery.replace(/^\//,'')
+      };
+
+      s3.getObject(params, function(err, data) {
+        if (err) {
+          res.status(404).send({ error: 'Not found' });
+        } else { 
+          res.set({
+            LastModified: data.LastModified,
+            ContentLength: data.ContentLength,
+            ContentType: data.ContentType,
+            ETag: data.ETag
+          }).send(new Buffer(data.Body));
+        }
+      });
+      
     }
+
+  } else if(onDev || ['css','fonts','images','scripts'].indexOf(urlPieces[1]) != -1) {
+
+    var staticFile = path.join(process.cwd(), urlWithoutQuery);
+
+    if(fs.existsSync(staticFile)) {
+      res.sendFile(staticFile, {
+          dotfiles: "allow"
+      })
+    }
+
   } else {
-    // console.log('File not found: ' + staticFile);
-    res.status(404).send({ error: 'Not found' });
+    console.log('Forbidden file or directory: ' + urlPieces[1] + ' - ' + urlWithoutQuery);
+    res.status(403).send({ error: 'Forbidden' });
   }
 })
 
@@ -335,6 +388,5 @@ app.all('*', function (req, res) {
   res.status(404).send({ error: 'Invalid request' });
 })
 
-app.listen(PORT, function () {
-  console.log('Listening on port ' + PORT + '!')
-})
+// Listen on provided port
+server.listen(port);
