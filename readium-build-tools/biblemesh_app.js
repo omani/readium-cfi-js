@@ -354,6 +354,7 @@ app.get('*', function (req, res) {
 
       s3.getObject(params, function(err, data) {
         if (err) {
+          console.log('S3 file not found: ' + params.Key);
           res.status(404).send({ error: 'Not found' });
         } else { 
           res.set({
@@ -375,7 +376,11 @@ app.get('*', function (req, res) {
       res.sendFile(staticFile, {
           dotfiles: "allow"
       })
+    } else {
+      console.log('File not found: ' + staticFile);
+      res.status(404).send({ error: 'Not found' });
     }
+      
 
   } else {
     console.log('Forbidden file or directory: ' + urlPieces[1] + ' - ' + urlWithoutQuery);
