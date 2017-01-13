@@ -62,10 +62,8 @@ var onDev = PATH != '/index.html';
 var bookIds = [1,2,3];
 
 // setup Amazon S3
-var s3 = new AWS.S3()
-// var myCredentials = new AWS.CognitoIdentityCredentials({IdentityPoolId:''});
+var s3 = new AWS.S3();
 var myConfig = new AWS.Config({
-  // credentials: myCredentials,
   region: 'us-west-2'
 });
 
@@ -337,7 +335,7 @@ app.get('/epub_content/epub_library.json', function (req, res) {
 
 // serve the static files
 app.get('*', function (req, res) {
-  var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '');
+  var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'');
   var urlPieces = urlWithoutQuery.split('/');
   var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
 
@@ -353,8 +351,14 @@ app.get('*', function (req, res) {
       };
 
       params.Expires = 60
-      var url = s3.getSignedUrl('getObject', params);
-      res.redirect(307, url);
+      var url = s3.getSignedUrl('getObject', params, function(err, url) {
+        if(err) {
+          console.log('S3 getSignedUrl error on ' + params.Key, err);
+          res.status(404).send({ error: 'Not found' });
+        } else {
+          res.redirect(307, url);
+        }
+      });
       
       // s3.getObject(params, function(err, data) {
       //   if (err) {
