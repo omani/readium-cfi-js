@@ -352,19 +352,23 @@ app.get('*', function (req, res) {
         Key: urlWithoutQuery.replace(/^\//,'')
       };
 
-      s3.getObject(params, function(err, data) {
-        if (err) {
-          console.log('S3 file not found: ' + params.Key);
-          res.status(404).send({ error: 'Not found' });
-        } else { 
-          res.set({
-            LastModified: data.LastModified,
-            ContentLength: data.ContentLength,
-            ContentType: data.ContentType,
-            ETag: data.ETag
-          }).send(new Buffer(data.Body));
-        }
-      });
+      params.Expires = 60
+      var url = s3.getSignedUrl('getObject', params);
+      res.redirect(307, url);
+      
+      // s3.getObject(params, function(err, data) {
+      //   if (err) {
+      //     console.log('S3 file not found: ' + params.Key);
+      //     res.status(404).send({ error: 'Not found' });
+      //   } else { 
+      //     res.set({
+      //       LastModified: data.LastModified,
+      //       ContentLength: data.ContentLength,
+      //       ContentType: data.ContentType,
+      //       ETag: data.ETag
+      //     }).send(new Buffer(data.Body));
+      //   }
+      // });
       
     }
 
