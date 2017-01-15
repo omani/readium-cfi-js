@@ -8,6 +8,8 @@ var path = require('path');
 var mysql = require('mysql');
 var AWS = require('aws-sdk');
 
+var NOT_DELETED_AT_TIME = '0000-01-01 00:00:00';
+
 // get process arguments
 var args = process.argv.slice(2);
 
@@ -80,38 +82,37 @@ var connection = mysql.createConnection({
 
 // date and time functions
 var getUTCTimeStamp = function(){
-    return parseInt(new Date().getTime() / 1000);
+  return new Date().getTime();
 }
 
 var notLaterThanNow = function(timestamp){
-    return Math.min(getUTCTimeStamp(), timestamp);
+  return Math.min(getUTCTimeStamp(), timestamp);
 }
 
 var mySQLDatetimeToTimestamp = function(mysqlDatetime) {
-  // Split timestamp into [ Y, M, D, h, m, s ]
-  var t = mysqlDatetime.split(/[- :]/);
+  // Split timestamp into [ Y, M, D, h, m, s, ms ]
+  var t = mysqlDatetime.split(/[- :\.]/);
 
   // Apply each element to the Date function
-  var d = new Date(Date.UTC(t[0], t[1]-1, t[2], t[3], t[4], t[5]));
+  var d = new Date(Date.UTC(t[0], t[1]-1, t[2], t[3], t[4], t[5], t[6]));
 
-  return parseInt(d.getTime() / 1000);
+  return d.getTime();
 }
 
 var timestampToMySQLDatetime = function(timestamp) {
-  var twoDigits = function(d) {
-      if(0 <= d && d < 10) return "0" + d.toString();
-      if(-10 < d && d < 0) return "-0" + (-1*d).toString();
-      return d.toString();
+  var specifyDigits = function(number, digits) {
+    return ('0000000000000' + number).substr(digits * -1);
   }
 
-  var date = new Date(timestamp*1000);
+  var date = new Date(timestamp);
 
   return date.getUTCFullYear() + "-"
-    + twoDigits(1 + date.getUTCMonth()) + "-"
-    + twoDigits(date.getUTCDate()) + " "
-    + twoDigits(date.getUTCHours()) + ":"
-    + twoDigits(date.getUTCMinutes()) + ":"
-    + twoDigits(date.getUTCSeconds());
+    + specifyDigits(1 + date.getUTCMonth(), 2) + "-"
+    + specifyDigits(date.getUTCDate(), 2) + " "
+    + specifyDigits(date.getUTCHours(), 2) + ":"
+    + specifyDigits(date.getUTCMinutes(), 2) + ":"
+    + specifyDigits(date.getUTCSeconds(), 2) + "."
+    + specifyDigits(date.getMilliseconds(), 3);
 }
 
 var paramsOk = function(params, reqParams, optParams) {
@@ -169,16 +170,19 @@ app.get('/users/:userId/books/:bookId.json', function (req, res) {
       }
 
       var highlightFields = 'cfi, color, note, updated_at';
-      connection.query('SELECT ' + highlightFields + ' FROM `highlight` WHERE user_id=? AND book_id=?', [req.params.userId, req.params.bookId] , function (err2, rows2, fields2) {
+      connection.query('SELECT ' + highlightFields + ' FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
+        [req.params.userId, req.params.bookId, NOT_DELETED_AT_TIME],
+        function (err2, rows2, fields2) {
 
-        rows2.forEach(function(row2, idx) {
-          rows2[idx].updated_at = mySQLDatetimeToTimestamp(row2.updated_at);
-        });
+          rows2.forEach(function(row2, idx) {
+            rows2[idx].updated_at = mySQLDatetimeToTimestamp(row2.updated_at);
+          });
 
-        bookUserData.highlights = rows2;
-        res.send(bookUserData);
+          bookUserData.highlights = rows2;
+          res.send(bookUserData);
 
-      });
+        }
+      );
     }
   })
 })
@@ -208,16 +212,18 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
 // TODO: lock and unlock tables
 
     connection.query('SELECT * FROM `latest_location` WHERE user_id=? AND book_id=?; '
-      + 'SELECT cfi, updated_at FROM `highlight` WHERE user_id=? AND book_id=?',
-      [req.params.userId, req.params.bookId, req.params.userId, req.params.bookId],
+      + 'SELECT cfi, updated_at, IF(note="", 0, 1) as hasnote FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
+      [req.params.userId, req.params.bookId, req.params.userId, req.params.bookId, NOT_DELETED_AT_TIME],
       function (err, results) {
         if (err) throw err
 
         var queriesToRun = [];
 
         var currentHighlightsUpdatedAtTimestamp = {};
+        var currentHighlightsHasNote = {};
         results[1].forEach(function(highlightRow) {
           currentHighlightsUpdatedAtTimestamp[highlightRow.cfi] = mySQLDatetimeToTimestamp(highlightRow.updated_at);
+          currentHighlightsHasNote[highlightRow.cfi] = !!highlightRow.hasnote;
         })
 
         if(req.body.latest_location) {
@@ -268,15 +274,23 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
             highlight.updated_at = timestampToMySQLDatetime(highlight.updated_at);
             // since I do not know whether to INSERT or UPDATE, just DELETE them all then then INSERT
             if(highlight._delete) {
-              queriesToRun.push({
-                query: 'DELETE FROM `highlight` WHERE user_id=? AND book_id=? AND cfi=? AND updated_at<=?',
-                vars: [req.params.userId, req.params.bookId, highlight.cfi, highlight.updated_at]
-              });
+              if(currentHighlightsHasNote[highlight.cfi]) {
+                var now = timestampToMySQLDatetime(getUTCTimeStamp());
+                queriesToRun.push({
+                  query: 'UPDATE `highlight` SET deleted_at=? WHERE user_id=? AND book_id=? AND cfi=? AND deleted_at=?',
+                  vars: [now, req.params.userId, req.params.bookId, highlight.cfi, NOT_DELETED_AT_TIME]
+                });
+              } else {
+                queriesToRun.push({
+                  query: 'DELETE FROM `highlight` WHERE user_id=? AND book_id=? AND cfi=? AND deleted_at=? AND updated_at<=?',
+                  vars: [req.params.userId, req.params.bookId, highlight.cfi, NOT_DELETED_AT_TIME, highlight.updated_at]
+                });
+              }
             } else if(currentHighlightsUpdatedAtTimestamp[highlight.cfi] != null) {
               queriesToRun.push({
-                query: 'UPDATE `highlight` SET ? WHERE user_id=? AND book_id=? AND cfi=?',
-                vars: [highlight, req.params.userId, req.params.bookId, highlight.cfi]
-              })
+                query: 'UPDATE `highlight` SET ? WHERE user_id=? AND book_id=? AND cfi=? AND deleted_at=?',
+                vars: [highlight, req.params.userId, req.params.bookId, highlight.cfi, NOT_DELETED_AT_TIME]
+              });
             } else {
               highlight.user_id = req.params.userId;
               highlight.book_id = req.params.bookId;
