@@ -149,6 +149,11 @@ app.get(['/', '/book/:bookId'], function (req, res) {
   res.sendFile(path.join(process.cwd(), PATH))
 })
 
+// get epub_library.json with library listing for given user
+app.get('/currenttime.json', function (req, res) {
+  res.send({ currentServerTime: getUTCTimeStamp() });
+})
+
 // Accepts GET method to retrieve a book’s user-data
 // read.biblemesh.com/users/{user_id}/books/{book_id}.json
 app.get('/users/:userId/books/:bookId.json', function (req, res) {
