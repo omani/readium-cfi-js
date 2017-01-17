@@ -63,7 +63,7 @@ for (var i = 0; i < args.length; i++) {
 var onDev = PATH != '/index.html';
 
 // authenticate
-var bookIds = [1,2,3];
+var bookIds = 'admin';  // normal user: [1,2,3]
 
 // setup Amazon S3
 var s3 = new AWS.S3();
@@ -172,20 +172,37 @@ app.get('/currenttime.json', function (req, res) {
 
 // import
 app.post('/importbooks.json', function (req, res) {
-  var tmpDir = 'tmp_epub_upload';
+  var tmpDir = 'tmp_epub_' + getUTCTimeStamp();
+  var toUploadDir = tmpDir + '/toupload';
   var epubToS3SuccessCount = 0;
   var epubFilePaths = [];
-  
+  var bookId, bookRow;
+
   var checkDone = function() {
     if(epubToS3SuccessCount == epubFilePaths.length) {
+      // clean up
       deleteFolderRecursive(tmpDir);
-      res.send({ success: true });
+
+      // insert the book row
+      bookRow.author = bookRow.creator || bookRow.publisher || '';
+      delete bookRow.creator;
+      delete bookRow.publisher;
+      connection.query('INSERT into `book` SET ?', [bookRow], function (err, result) {
+        if (err) {
+          // clean up
+          deleteFolderRecursive(tmpDir);
+          throw err;
+        }
+        
+        res.send({ success: true });
+      })
+
     }
   }
   
-  var putEPUBFile = function(bookId, relfilepath, body, skipCnt) {
+  var putEPUBFile = function(relfilepath, body) {
     var key = 'epub_content/book_' + bookId + '/' + relfilepath;
-    console.log('Upload file to S3: ' + key);
+    // console.log('Upload file to S3: ' + key);
     s3.putObject({
       Bucket: 'biblemesh-readium',
       Key: key,
@@ -193,11 +210,13 @@ app.post('/importbooks.json', function (req, res) {
       ContentLength: body.byteCount,
     }, function(err, data) {
       console.log('Return from S3 file upload. File: ' + key);
-      if (err) throw err;
-      if(!skipCnt) {
-        epubToS3SuccessCount++;
-        checkDone();
+      if (err) {
+        // clean up
+        deleteFolderRecursive(tmpDir);
+        throw err;
       }
+      epubToS3SuccessCount++;
+      checkDone();
     });
   }
 
@@ -214,32 +233,146 @@ app.post('/importbooks.json', function (req, res) {
     }
   };
 
-  var form = new multiparty.Form();
+  function emptyS3Folder(params, callback){
+    s3.listObjects(params, function(err, data) {
+      if (err) return callback(err);
 
-  form.on('part', function(part) {
-    var filename = part.filename || '';
-    var filenameParts = filename.match(/^book_([0-9]+)\.epub$/);
+      if (data.Contents.length == 0) callback();
 
-    if(!filenameParts) {
-      res.send({ error: "Invalid file name(s)." });
-      return;
-    }
+      var delParams = {Bucket: params.Bucket};
+      delParams.Delete = {Objects:[]};
 
-    var bookId = parseInt(filenameParts[1]);
+      var overfull = data.Contents.length >= 1000;
+      data.Contents.slice(0,999).forEach(function(content) {
+        delParams.Delete.Objects.push({Key: content.Key});
+      });
 
-    deleteFolderRecursive(tmpDir);
-    part.pipe(unzip.Extract({ path: tmpDir })).on('close', function() {
-      getEPUBFilePaths(tmpDir);
-      epubFilePaths.forEach(function(path) {
-        putEPUBFile(bookId, path.replace(tmpDir + '/', ''), fs.createReadStream(path));
+      s3.deleteObjects(delParams, function(err, data) {
+        if (err) return callback(err);
+        if(overfull) emptyS3Folder(params, callback);
+        else callback();
       });
     });
+  }
 
-    putEPUBFile(bookId, 'book.epub', part, true);
+  fs.mkdir(tmpDir, function(err) {
 
+    var form = new multiparty.Form({
+      uploadDir: tmpDir
+    });
+
+    form.on('file', function(name, file) {
+
+      var filename = file.originalFilename || '';
+      var filenameParts = filename.match(/^book_([0-9]+)\.epub$/);
+
+      if(!filenameParts) {
+        res.send({ error: "Invalid file name(s)." });
+        return;
+      }
+
+      bookId = parseInt(filenameParts[1]);
+
+      // Check that id does not exist. If it does, abort
+      // Put row into book table
+      connection.query('SELECT id FROM `book` WHERE id=?', [bookId] , function (err, rows, fields) {
+        if (err) {
+          // clean up
+          deleteFolderRecursive(tmpDir);
+          throw err;
+        }
+
+        if(rows.length > 0) {
+
+          res.send({ error: "File already exists." });
+          
+        } else {
+          
+          emptyS3Folder({
+            Bucket: 'biblemesh-readium',
+            Prefix: 'epub_content/book_' + bookId + '/'
+          }, function(err, data) {
+            if (err) {
+              // clean up
+              deleteFolderRecursive(tmpDir);
+              throw err;
+            }
+          
+            bookRow = {
+              id: bookId,
+              title: 'Unknown',
+              rootUrl: 'epub_content/book_' + bookId,
+              updated_at: timestampToMySQLDatetime(getUTCTimeStamp()).replace(/\.[0-9]*/, ''),
+            };
+
+            deleteFolderRecursive(toUploadDir);
+
+            fs.mkdir(toUploadDir, function(err) {
+              
+              fs.createReadStream(file.path).pipe(unzip.Extract({ path: toUploadDir })).on('close', function() {
+
+                fs.rename(file.path, toUploadDir + '/book.epub', function(err) {
+
+                  getEPUBFilePaths(toUploadDir);
+                  epubFilePaths.forEach(function(path) {
+                    // TODO: Setup search
+                    // TODO: make thumbnail smaller
+                    // TODO: make fonts public
+
+                    if(path == toUploadDir + '/META-INF/container.xml') {
+                      var contents = fs.readFileSync(path, "utf-8");
+                      var matches = contents.match(/["']([^"']+\.opf)["']/);
+                      if(matches) {
+                        var opfContents = fs.readFileSync(toUploadDir + '/' + matches[1], "utf-8");
+
+                        ['title','creator','publisher'].forEach(function(dcTag) {
+                          var dcTagRegEx = new RegExp('<dc:' + dcTag + '>([^<]+)</dc:' + dcTag + '>');
+                          var opfPathMatches1 = opfContents.match(dcTagRegEx);
+                          if(opfPathMatches1) {
+                            bookRow[dcTag] = opfPathMatches1[1];
+                          }
+
+                        });
+
+                        var opfPathMatches2 = opfContents.match(/<meta ([^>]*)name=["']cover["']([^>]*)\/>/);
+                        var metaCover = opfPathMatches2 && opfPathMatches2[1] + opfPathMatches2[2]
+                        if(metaCover) {
+                          var metaCoverMatches = metaCover.match(/content=["']([^"']+)["']/);
+                          if(metaCoverMatches) {
+                            var coverItemRegEx = new RegExp('<item ([^>]*)id=["\']' + metaCoverMatches[1] + '["\']([^>]*)\/>');
+                            var coverItemMatches = opfContents.match(coverItemRegEx);
+                            var coverItem = coverItemMatches && coverItemMatches[1] + coverItemMatches[2];
+                            if(coverItem) {
+                              var coverItemHrefMatches = coverItem.match(/href=["']([^"']+)["']/);
+                              if(coverItemHrefMatches) {
+                                bookRow.coverHref = 'epub_content/book_' + bookId + '/' + matches[1].replace(/[^\/]*$/, '') + coverItemHrefMatches[1];
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+
+                    putEPUBFile(path.replace(toUploadDir + '/', ''), fs.createReadStream(path));
+                  });
+
+                });
+
+              });
+
+            });
+
+          });
+        }
+
+      })
+
+    });
+
+    form.parse(req);
+    
   });
 
-  form.parse(req);
 })
 
 // Accepts GET method to retrieve a book’s user-data
@@ -432,7 +565,7 @@ app.get('/epub_content/epub_library.json', function (req, res) {
   // has bookIds array from authenticate
 
   // look those books up in the database and form the library
-  connection.query('SELECT * FROM `book` WHERE id IN(?)', [bookIds] , function (err, rows, fields) {
+  connection.query('SELECT * FROM `book`' + (bookIds=='admin' ? '' : ' WHERE id IN(?)'), [bookIds] , function (err, rows, fields) {
     if (err) throw err
 
     res.send(rows);
@@ -449,7 +582,7 @@ app.get('*', function (req, res) {
   // check that they have access if this is a book
   if(urlPieces[1] == 'epub_content') {
 
-    if(bookIds.indexOf(bookId) == -1) {
+    if(bookIds != 'admin' && bookIds.indexOf(bookId) == -1) {
       res.status(403).send({ error: 'Forbidden' });
     } else {
       var params = {
