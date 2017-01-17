@@ -3,7 +3,9 @@ var express = require('express');
 var app = express();
 var http = require('http');
 var bodyParser = require('body-parser');
+var multiparty = require('multiparty');
 var fs = require('fs');
+var unzip = require('unzip');
 var path = require('path');
 var mysql = require('mysql');
 var AWS = require('aws-sdk');
@@ -134,6 +136,20 @@ var paramsOk = function(params, reqParams, optParams) {
   return true;
 }
 
+var deleteFolderRecursive = function(path) {
+  if( fs.existsSync(path) ) {
+    fs.readdirSync(path).forEach(function(file,index){
+      var curPath = path + "/" + file;
+      if(fs.lstatSync(curPath).isDirectory()) { // recurse
+        deleteFolderRecursive(curPath);
+      } else { // delete file
+        fs.unlinkSync(curPath);
+      }
+    });
+    fs.rmdirSync(path);
+  }
+};
+
 app.use(bodyParser.json()); // for parsing application/json
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -149,9 +165,81 @@ app.get(['/', '/book/:bookId'], function (req, res) {
   res.sendFile(path.join(process.cwd(), PATH))
 })
 
-// get epub_library.json with library listing for given user
+// get current milliseconds timestamp for syncing clock with the client
 app.get('/currenttime.json', function (req, res) {
   res.send({ currentServerTime: getUTCTimeStamp() });
+})
+
+// import
+app.post('/importbooks.json', function (req, res) {
+  var tmpDir = 'tmp_epub_upload';
+  var epubToS3SuccessCount = 0;
+  var epubFilePaths = [];
+  
+  var checkDone = function() {
+    if(epubToS3SuccessCount == epubFilePaths.length) {
+      deleteFolderRecursive(tmpDir);
+      res.send({ success: true });
+    }
+  }
+  
+  var putEPUBFile = function(bookId, relfilepath, body, skipCnt) {
+    var key = 'epub_content/book_' + bookId + '/' + relfilepath;
+    console.log('Upload file to S3: ' + key);
+    s3.putObject({
+      Bucket: 'biblemesh-readium',
+      Key: key,
+      Body: body,
+      ContentLength: body.byteCount,
+    }, function(err, data) {
+      console.log('Return from S3 file upload. File: ' + key);
+      if (err) throw err;
+      if(!skipCnt) {
+        epubToS3SuccessCount++;
+        checkDone();
+      }
+    });
+  }
+
+  var getEPUBFilePaths = function(path) {
+    if( fs.existsSync(path) ) {
+      fs.readdirSync(path).forEach(function(file,index){
+        var curPath = path + "/" + file;
+        if(fs.lstatSync(curPath).isDirectory()) { // recurse
+          getEPUBFilePaths(curPath);
+        } else {
+          epubFilePaths.push(curPath);
+        }
+      });
+    }
+  };
+
+  var form = new multiparty.Form();
+
+  form.on('part', function(part) {
+    var filename = part.filename || '';
+    var filenameParts = filename.match(/^book_([0-9]+)\.epub$/);
+
+    if(!filenameParts) {
+      res.send({ error: "Invalid file name(s)." });
+      return;
+    }
+
+    var bookId = parseInt(filenameParts[1]);
+
+    deleteFolderRecursive(tmpDir);
+    part.pipe(unzip.Extract({ path: tmpDir })).on('close', function() {
+      getEPUBFilePaths(tmpDir);
+      epubFilePaths.forEach(function(path) {
+        putEPUBFile(bookId, path.replace(tmpDir + '/', ''), fs.createReadStream(path));
+      });
+    });
+
+    putEPUBFile(bookId, 'book.epub', part, true);
+
+  });
+
+  form.parse(req);
 })
 
 // Accepts GET method to retrieve a book’s user-data

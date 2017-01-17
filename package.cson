@@ -107,6 +107,12 @@ dependencies:
 
     "aws-sdk": '2.7.21'
 
+    "multiparty": '4.1.2'
+
+    "unzip": '0.1.11'
+    
+    "fd-slicer": '1.0.1'
+
 #####################################################################
 # These dependencies can be fetched by using the "--dev" option
 # in "npm install --dev readium-cfi-js".
