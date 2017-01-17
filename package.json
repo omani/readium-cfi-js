@@ -51,7 +51,7 @@
     "http": "0.0.0",
     "aws-sdk": "2.7.21",
     "multiparty": "4.1.2",
-    "unzip": "0.1.11",
+    "adm-zip": "0.4.7",
     "fd-slicer": "1.0.1"
   },
   "devDependencies": {

@@ -5,7 +5,7 @@ var http = require('http');
 var bodyParser = require('body-parser');
 var multiparty = require('multiparty');
 var fs = require('fs');
-var unzip = require('unzip');
+var admzip = require('adm-zip');
 var path = require('path');
 var mysql = require('mysql');
 var AWS = require('aws-sdk');
@@ -150,6 +150,30 @@ var deleteFolderRecursive = function(path) {
   }
 };
 
+function emptyS3Folder(params, callback){
+  s3.listObjects(params, function(err, data) {
+    if (err) return callback(err);
+
+    if (data.Contents.length == 0) callback();
+
+    var delParams = {Bucket: params.Bucket};
+    delParams.Delete = {Objects:[]};
+
+    var overfull = data.Contents.length >= 1000;
+    data.Contents.slice(0,999).forEach(function(content) {
+      delParams.Delete.Objects.push({Key: content.Key});
+    });
+
+    if(delParams.Delete.Objects.length > 0) {
+      s3.deleteObjects(delParams, function(err, data) {
+        if (err) return callback(err);
+        if(overfull) emptyS3Folder(params, callback);
+        else callback();
+      });
+    }
+  });
+}
+
 app.use(bodyParser.json()); // for parsing application/json
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -170,8 +194,36 @@ app.get('/currenttime.json', function (req, res) {
   res.send({ currentServerTime: getUTCTimeStamp() });
 })
 
+// delete a book
+app.delete(['/', '/book/:bookId'], function (req, res, next) {
+
+  if(bookIds != 'admin') {
+    res.send({ error: "You do not have proper permissions to do this action." });
+    return;
+  }
+
+  connection.query('DELETE FROM `book` WHERE id=?', req.params.bookId, function (err, result) {
+
+    emptyS3Folder({
+      Bucket: 'biblemesh-readium',
+      Prefix: 'epub_content/book_' + req.params.bookId + '/'
+    }, function(err, data) {
+      if (err) return next(err);
+      
+      res.send({ success: true });
+
+    });
+  });
+})
+
 // import
-app.post('/importbooks.json', function (req, res) {
+app.post('/importbooks.json', function (req, res, next) {
+
+  if(bookIds != 'admin') {
+    res.send({ error: "You do not have proper permissions to do this action." });
+    return;
+  }
+
   var tmpDir = 'tmp_epub_' + getUTCTimeStamp();
   var toUploadDir = tmpDir + '/toupload';
   var epubToS3SuccessCount = 0;
@@ -191,7 +243,7 @@ app.post('/importbooks.json', function (req, res) {
         if (err) {
           // clean up
           deleteFolderRecursive(tmpDir);
-          throw err;
+          return next(err);
         }
         
         res.send({ success: true });
@@ -209,11 +261,11 @@ app.post('/importbooks.json', function (req, res) {
       Body: body,
       ContentLength: body.byteCount,
     }, function(err, data) {
-      console.log('Return from S3 file upload. File: ' + key);
+      // console.log('Return from S3 file upload. File: ' + key);
       if (err) {
         // clean up
         deleteFolderRecursive(tmpDir);
-        throw err;
+        return next(err);
       }
       epubToS3SuccessCount++;
       checkDone();
@@ -232,28 +284,6 @@ app.post('/importbooks.json', function (req, res) {
       });
     }
   };
-
-  function emptyS3Folder(params, callback){
-    s3.listObjects(params, function(err, data) {
-      if (err) return callback(err);
-
-      if (data.Contents.length == 0) callback();
-
-      var delParams = {Bucket: params.Bucket};
-      delParams.Delete = {Objects:[]};
-
-      var overfull = data.Contents.length >= 1000;
-      data.Contents.slice(0,999).forEach(function(content) {
-        delParams.Delete.Objects.push({Key: content.Key});
-      });
-
-      s3.deleteObjects(delParams, function(err, data) {
-        if (err) return callback(err);
-        if(overfull) emptyS3Folder(params, callback);
-        else callback();
-      });
-    });
-  }
 
   fs.mkdir(tmpDir, function(err) {
 
@@ -279,7 +309,7 @@ app.post('/importbooks.json', function (req, res) {
         if (err) {
           // clean up
           deleteFolderRecursive(tmpDir);
-          throw err;
+          return next(err);
         }
 
         if(rows.length > 0) {
@@ -295,7 +325,7 @@ app.post('/importbooks.json', function (req, res) {
             if (err) {
               // clean up
               deleteFolderRecursive(tmpDir);
-              throw err;
+              return next(err);
             }
           
             bookRow = {
@@ -309,7 +339,9 @@ app.post('/importbooks.json', function (req, res) {
 
             fs.mkdir(toUploadDir, function(err) {
               
-              fs.createReadStream(file.path).pipe(unzip.Extract({ path: toUploadDir })).on('close', function() {
+              try {
+                var zip = new admzip(file.path);
+                zip.extractAllTo(toUploadDir);
 
                 fs.rename(file.path, toUploadDir + '/book.epub', function(err) {
 
@@ -355,62 +387,61 @@ app.post('/importbooks.json', function (req, res) {
 
                     putEPUBFile(path.replace(toUploadDir + '/', ''), fs.createReadStream(path));
                   });
-
                 });
 
-              });
-
+              } catch (e) {
+                res.send({ error: "Unable to process this file." });
+              }
             });
-
           });
         }
-
       })
-
     });
 
     form.parse(req);
     
   });
-
 })
 
 // Accepts GET method to retrieve a book’s user-data
 // read.biblemesh.com/users/{user_id}/books/{book_id}.json
-app.get('/users/:userId/books/:bookId.json', function (req, res) {
+app.get('/users/:userId/books/:bookId.json', function (req, res, next) {
 
   // build the userData object
-  connection.query('SELECT * FROM `latest_location` WHERE user_id=? AND book_id=?', [req.params.userId, req.params.bookId] , function (err1, rows1, fields1) {
-    if (err1) throw err1
+  connection.query('SELECT * FROM `latest_location` WHERE user_id=? AND book_id=?',
+    [req.params.userId, req.params.bookId],
+    function (err, rows) {
+      if (err) return next(err);
 
-    var row = rows1[0];
+      var row = rows[0];
 
-    if(!row) {
-        res.send(null);
+      if(!row) {
+          res.send(null);
 
-    } else {
-      var bookUserData = {
-        latest_location: row.cfi,
-        updated_at: mySQLDatetimeToTimestamp(row.updated_at),
-        highlights: []
-      }
-
-      var highlightFields = 'cfi, color, note, updated_at';
-      connection.query('SELECT ' + highlightFields + ' FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
-        [req.params.userId, req.params.bookId, NOT_DELETED_AT_TIME],
-        function (err2, rows2, fields2) {
-
-          rows2.forEach(function(row2, idx) {
-            rows2[idx].updated_at = mySQLDatetimeToTimestamp(row2.updated_at);
-          });
-
-          bookUserData.highlights = rows2;
-          res.send(bookUserData);
-
+      } else {
+        var bookUserData = {
+          latest_location: row.cfi,
+          updated_at: mySQLDatetimeToTimestamp(row.updated_at),
+          highlights: []
         }
-      );
+
+        var highlightFields = 'cfi, color, note, updated_at';
+        connection.query('SELECT ' + highlightFields + ' FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
+          [req.params.userId, req.params.bookId, NOT_DELETED_AT_TIME],
+          function (err2, rows2, fields2) {
+
+            rows2.forEach(function(row2, idx) {
+              rows2[idx].updated_at = mySQLDatetimeToTimestamp(row2.updated_at);
+            });
+
+            bookUserData.highlights = rows2;
+            res.send(bookUserData);
+
+          }
+        );
+      }
     }
-  })
+  )
 })
 
 // read.biblemesh.com/users/{user_id}/books/{book_id}.json
@@ -441,7 +472,7 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
       + 'SELECT cfi, updated_at, IF(note="", 0, 1) as hasnote FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
       [req.params.userId, req.params.bookId, req.params.userId, req.params.bookId, NOT_DELETED_AT_TIME],
       function (err, results) {
-        if (err) throw err
+        if (err) return next(err);
 
         var queriesToRun = [];
 
@@ -534,7 +565,7 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
             connection.query(query.query, query.vars, function (err, result) {
               if (err) {
                 console.log(query);
-                throw err
+                return next(err);
               }
               runAQuery();
             })
@@ -560,13 +591,13 @@ app.all('/users/:userId/books/:bookId.json', function (req, res, next) {
 })
 
 // get epub_library.json with library listing for given user
-app.get('/epub_content/epub_library.json', function (req, res) {
+app.get('/epub_content/epub_library.json', function (req, res, next) {
 
   // has bookIds array from authenticate
 
   // look those books up in the database and form the library
-  connection.query('SELECT * FROM `book`' + (bookIds=='admin' ? '' : ' WHERE id IN(?)'), [bookIds] , function (err, rows, fields) {
-    if (err) throw err
+  connection.query('SELECT * FROM `book`' + (bookIds=='admin' ? '' : ' WHERE id IN(?)'), [bookIds.concat([-1])] , function (err, rows, fields) {
+    if (err) return next(err);
 
     res.send(rows);
 
