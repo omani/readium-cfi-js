@@ -241,8 +241,6 @@ app.post('/importbooks.json', function (req, res, next) {
       delete bookRow.publisher;
       connection.query('INSERT into `book` SET ?', [bookRow], function (err, result) {
         if (err) {
-          // clean up
-          deleteFolderRecursive(tmpDir);
           return next(err);
         }
         
@@ -297,6 +295,7 @@ app.post('/importbooks.json', function (req, res, next) {
       var filenameParts = filename.match(/^book_([0-9]+)\.epub$/);
 
       if(!filenameParts) {
+        deleteFolderRecursive(tmpDir);
         res.send({ error: "Invalid file name(s)." });
         return;
       }
@@ -314,6 +313,7 @@ app.post('/importbooks.json', function (req, res, next) {
 
         if(rows.length > 0) {
 
+          deleteFolderRecursive(tmpDir);
           res.send({ error: "File already exists." });
           
         } else {
@@ -390,6 +390,7 @@ app.post('/importbooks.json', function (req, res, next) {
                 });
 
               } catch (e) {
+                deleteFolderRecursive(tmpDir);
                 res.send({ error: "Unable to process this file." });
               }
             });
