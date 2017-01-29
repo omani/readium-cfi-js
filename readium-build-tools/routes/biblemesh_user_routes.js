@@ -34,7 +34,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
   // read.biblemesh.com
   // read.biblemesh.com/book/{book_id}
   app.get(['/', '/book/:bookId'], ensureAuthenticated, function (req, res) {
-    res.sendFile(path.join(process.cwd(), process.env.APP_PATH))
+    res.sendFile(path.join(process.cwd(), process.env.APP_PATH || '/index.html'))
   })
 
   // Accepts GET method to retrieve a book’s user-data
