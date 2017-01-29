@@ -25,6 +25,10 @@ module.exports = function (app, connection, ensureAuthenticated) {
     return true;
   }
 
+  var getHighlightId = function(highlight) {
+    return highlight.spineIdRef + ' ' + highlight.cfi;
+  }
+
   // get current milliseconds timestamp for syncing clock with the client
   app.get('/currenttime.json', function (req, res) {
     res.send({ currentServerTime: biblemesh_util.getUTCTimeStamp() });
@@ -59,7 +63,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
             highlights: []
           }
 
-          var highlightFields = 'cfi, color, note, updated_at';
+          var highlightFields = 'spineIdRef, cfi, color, note, updated_at';
           connection.query('SELECT ' + highlightFields + ' FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
             [req.params.userId, req.params.bookId, biblemesh_util.NOT_DELETED_AT_TIME],
             function (err2, rows2, fields2) {
@@ -113,8 +117,8 @@ module.exports = function (app, connection, ensureAuthenticated) {
           var currentHighlightsUpdatedAtTimestamp = {};
           var currentHighlightsHasNote = {};
           results[1].forEach(function(highlightRow) {
-            currentHighlightsUpdatedAtTimestamp[highlightRow.cfi] = biblemesh_util.mySQLDatetimeToTimestamp(highlightRow.updated_at);
-            currentHighlightsHasNote[highlightRow.cfi] = !!highlightRow.hasnote;
+            currentHighlightsUpdatedAtTimestamp[getHighlightId(highlightRow)] = biblemesh_util.mySQLDatetimeToTimestamp(highlightRow.updated_at);
+            currentHighlightsHasNote[getHighlightId(highlightRow)] = !!highlightRow.hasnote;
           })
 
           if(req.body.latest_location) {
@@ -151,13 +155,13 @@ module.exports = function (app, connection, ensureAuthenticated) {
           if(req.body.highlights) {
             req.body.highlights.forEach(function(highlight) {
               
-              if(!paramsOk(highlight, ['updated_at','cfi'], ['color','note','_delete'])) {
+              if(!paramsOk(highlight, ['updated_at','spineIdRef','cfi'], ['color','note','_delete'])) {
                 res.status(400).send();
                 return;
               }
               highlight.updated_at = biblemesh_util.notLaterThanNow(highlight.updated_at);
 
-              if((currentHighlightsUpdatedAtTimestamp[highlight.cfi] || 0) > highlight.updated_at) {
+              if((currentHighlightsUpdatedAtTimestamp[getHighlightId(highlight)] || 0) > highlight.updated_at) {
                 containedOldPatch = true;
                 return;
               }
@@ -165,22 +169,22 @@ module.exports = function (app, connection, ensureAuthenticated) {
               highlight.updated_at = biblemesh_util.timestampToMySQLDatetime(highlight.updated_at);
               // since I do not know whether to INSERT or UPDATE, just DELETE them all then then INSERT
               if(highlight._delete) {
-                if(currentHighlightsHasNote[highlight.cfi]) {
+                if(currentHighlightsHasNote[getHighlightId(highlight)]) {
                   var now = biblemesh_util.timestampToMySQLDatetime(biblemesh_util.getUTCTimeStamp());
                   queriesToRun.push({
-                    query: 'UPDATE `highlight` SET deleted_at=? WHERE user_id=? AND book_id=? AND cfi=? AND deleted_at=?',
-                    vars: [now, req.params.userId, req.params.bookId, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME]
+                    query: 'UPDATE `highlight` SET deleted_at=? WHERE user_id=? AND book_id=? AND spineIdRef=? && cfi=? AND deleted_at=?',
+                    vars: [now, req.params.userId, req.params.bookId, highlight.spineIdRef, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME]
                   });
                 } else {
                   queriesToRun.push({
-                    query: 'DELETE FROM `highlight` WHERE user_id=? AND book_id=? AND cfi=? AND deleted_at=? AND updated_at<=?',
-                    vars: [req.params.userId, req.params.bookId, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME, highlight.updated_at]
+                    query: 'DELETE FROM `highlight` WHERE user_id=? AND book_id=? AND spineIdRef=? AND cfi=? AND deleted_at=? AND updated_at<=?',
+                    vars: [req.params.userId, req.params.bookId, highlight.spineIdRef, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME, highlight.updated_at]
                   });
                 }
-              } else if(currentHighlightsUpdatedAtTimestamp[highlight.cfi] != null) {
+              } else if(currentHighlightsUpdatedAtTimestamp[getHighlightId(highlight)] != null) {
                 queriesToRun.push({
-                  query: 'UPDATE `highlight` SET ? WHERE user_id=? AND book_id=? AND cfi=? AND deleted_at=?',
-                  vars: [highlight, req.params.userId, req.params.bookId, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME]
+                  query: 'UPDATE `highlight` SET ? WHERE user_id=? AND book_id=? AND spineIdRef AND cfi=? AND deleted_at=?',
+                  vars: [highlight, req.params.userId, req.params.bookId, highlight.spineIdRef, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME]
                 });
               } else {
                 highlight.user_id = req.params.userId;

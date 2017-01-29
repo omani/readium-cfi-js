@@ -53,7 +53,7 @@ module.exports = function (app, s3, connection, passport, samlStrategy, ensureAu
         
       }
 
-    } else if(process.env.IS_LOCAL || ['css','fonts','images','scripts'].indexOf(urlPieces[1]) != -1) {
+    } else if(process.env.IS_DEV || ['css','fonts','images','scripts'].indexOf(urlPieces[1]) != -1) {
 
       var staticFile = path.join(process.cwd(), urlWithoutQuery);
 

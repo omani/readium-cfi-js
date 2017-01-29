@@ -64,7 +64,7 @@ for(var idp in idpData) {
 }
 
 function ensureAuthenticated(req, res, next) {
-  if (process.env.IS_LOCAL || req.isAuthenticated())
+  if (process.env.SKIP_AUTH || req.isAuthenticated())
     return next();
   else
     return res.redirect('/login');
