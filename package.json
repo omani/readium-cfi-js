@@ -55,7 +55,9 @@
     "fd-slicer": "1.0.1",
     "express-session": "1.15.0",
     "passport": "0.3.2",
-    "passport-saml": "0.15.0"
+    "passport-saml": "0.15.0",
+    "dotenv": "4.0.0",
+    "connect-redis": "3.2.0"
   },
   "devDependencies": {
     "requirejs": "latest",

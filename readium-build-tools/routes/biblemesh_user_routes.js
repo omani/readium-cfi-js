@@ -1,4 +1,4 @@
-module.exports = function (app, appPath, connection, ensureAuthenticated) {
+module.exports = function (app, connection, ensureAuthenticated) {
 
   // temporary
   var bookIds = 'admin';  // normal user: [1,2,3]
@@ -34,7 +34,7 @@ module.exports = function (app, appPath, connection, ensureAuthenticated) {
   // read.biblemesh.com
   // read.biblemesh.com/book/{book_id}
   app.get(['/', '/book/:bookId'], ensureAuthenticated, function (req, res) {
-    res.sendFile(path.join(process.cwd(), appPath))
+    res.sendFile(path.join(process.cwd(), process.env.APP_PATH))
   })
 
   // Accepts GET method to retrieve a book’s user-data

@@ -1,4 +1,4 @@
-module.exports = function (app, appPath, s3, connection, passport, ensureAuthenticated) {
+module.exports = function (app, s3, connection, passport, ensureAuthenticated) {
 
   // temporary
   var bookIds = 'admin';  // normal user: [1,2,3]
@@ -8,7 +8,7 @@ module.exports = function (app, appPath, s3, connection, passport, ensureAuthent
 
   // require('./biblemesh_auth_routes')(app, passport);
   require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticated);
-  require('./biblemesh_user_routes')(app, appPath, connection, ensureAuthenticated);
+  require('./biblemesh_user_routes')(app, connection, ensureAuthenticated);
 
   // serve the static files
   app.get('*', ensureAuthenticated, function (req, res) {
@@ -53,7 +53,7 @@ module.exports = function (app, appPath, s3, connection, passport, ensureAuthent
         
       }
 
-    } else if(appPath != '/index.html' || ['css','fonts','images','scripts'].indexOf(urlPieces[1]) != -1) {
+    } else if(process.env.IS_LOCAL || ['css','fonts','images','scripts'].indexOf(urlPieces[1]) != -1) {
 
       var staticFile = path.join(process.cwd(), urlWithoutQuery);
 
