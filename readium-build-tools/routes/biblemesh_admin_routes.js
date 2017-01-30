@@ -57,6 +57,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
     }
 
     connection.query('DELETE FROM `book` WHERE id=?', req.params.bookId, function (err, result) {
+      if (err) return next(err);
 
       emptyS3Folder({
         Bucket: 'biblemesh-readium',

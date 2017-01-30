@@ -26,13 +26,13 @@ var appURL = process.env.APP_URL || "https://read.biblemesh.com";
 
 ////////////// SETUP PASSPORT //////////////
 
-// passport.serializeUser(function(user, done) {
-//   done(null, user);
-// });
+passport.serializeUser(function(user, done) {
+  done(null, user);
+});
 
-// passport.deserializeUser(function(user, done) {
-//   done(null, user);
-// });
+passport.deserializeUser(function(user, done) {
+  done(null, user);
+});
 
 var samlStrategy;
 var key = fs.readFileSync(__dirname + '/cert/key.pem', 'utf8');

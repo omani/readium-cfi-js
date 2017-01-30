@@ -67,6 +67,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
           connection.query('SELECT ' + highlightFields + ' FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
             [req.params.userId, req.params.bookId, biblemesh_util.NOT_DELETED_AT_TIME],
             function (err2, rows2, fields2) {
+              if (err2) return next(err);
 
               rows2.forEach(function(row2, idx) {
                 rows2[idx].updated_at = biblemesh_util.mySQLDatetimeToTimestamp(row2.updated_at);
