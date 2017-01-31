@@ -6,9 +6,6 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
   var admzip = require('adm-zip');
   var biblemesh_util = require('./biblemesh_util');
 
-  // temporary
-  var bookIds = 'admin';  // normal user: [1,2,3]
-
   var deleteFolderRecursive = function(path) {
     if( fs.existsSync(path) ) {
       fs.readdirSync(path).forEach(function(file,index){
@@ -51,7 +48,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
   // delete a book
   app.delete(['/', '/book/:bookId'], ensureAuthenticated, function (req, res, next) {
 
-    if(bookIds != 'admin') {
+    if(!req.user.isAdmin) {
       res.send({ error: "You do not have proper permissions to do this action." });
       return;
     }
@@ -60,7 +57,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
       if (err) return next(err);
 
       emptyS3Folder({
-        Bucket: 'biblemesh-readium',
+        Bucket: process.env.S3_BUCKET,
         Prefix: 'epub_content/book_' + req.params.bookId + '/'
       }, function(err, data) {
         if (err) return next(err);
@@ -74,7 +71,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
   // import
   app.post('/importbooks.json', ensureAuthenticated, function (req, res, next) {
 
-    if(bookIds != 'admin') {
+    if(!req.user.isAdmin) {
       res.send({ error: "You do not have proper permissions to do this action." });
       return;
     }
@@ -109,7 +106,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
       var key = 'epub_content/book_' + bookId + '/' + relfilepath;
       // console.log('Upload file to S3: ' + key);
       s3.putObject({
-        Bucket: 'biblemesh-readium',
+        Bucket: process.env.S3_BUCKET,
         Key: key,
         Body: body,
         ContentLength: body.byteCount,
@@ -174,7 +171,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
           } else {
             
             emptyS3Folder({
-              Bucket: 'biblemesh-readium',
+              Bucket: process.env.S3_BUCKET,
               Prefix: 'epub_content/book_' + bookId + '/'
             }, function(err, data) {
               if (err) {

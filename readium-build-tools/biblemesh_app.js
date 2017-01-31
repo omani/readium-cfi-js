@@ -48,7 +48,13 @@ var strategyOpts = {
 };
 
 var strategyCallback = function(profile, done) {
-  return done(null, profile); 
+console.log('profile');
+console.log(profile);
+  return done(null, {
+    id: 1,
+    bookIds: [],  // ex. [1,2,3]
+    isAdmin: true
+  }); 
 };
 
 var idpData = {
@@ -64,10 +70,18 @@ for(var idp in idpData) {
 }
 
 function ensureAuthenticated(req, res, next) {
-  if (process.env.SKIP_AUTH || req.isAuthenticated())
+  if (req.isAuthenticated()) {
     return next();
-  else
+  } else if (process.env.SKIP_AUTH) {
+    req.user = {
+      id: 1,
+      bookIds: [],  // ex. [1,2,3]
+      isAdmin: true
+    }
+    return next();
+  } else {
     return res.redirect('/login');
+  }
 }
 
 

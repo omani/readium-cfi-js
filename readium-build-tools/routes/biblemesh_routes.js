@@ -1,8 +1,5 @@
 module.exports = function (app, s3, connection, passport, samlStrategy, ensureAuthenticated) {
 
-  // temporary
-  var bookIds = 'admin';  // normal user: [1,2,3]
-
   var path = require('path');
   var fs = require('fs');
 
@@ -19,11 +16,11 @@ module.exports = function (app, s3, connection, passport, samlStrategy, ensureAu
     // check that they have access if this is a book
     if(urlPieces[1] == 'epub_content') {
 
-      if(bookIds != 'admin' && bookIds.indexOf(bookId) == -1) {
+      if(!req.user.isAdmin && req.user.bookIds.indexOf(bookId) == -1) {
         res.status(403).send({ error: 'Forbidden' });
       } else {
         var params = {
-          Bucket: 'biblemesh-readium',
+          Bucket: process.env.S3_BUCKET,
           Key: urlWithoutQuery.replace(/^\//,'')
         };
 

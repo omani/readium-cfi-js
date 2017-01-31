@@ -1,8 +1,5 @@
 module.exports = function (app, connection, ensureAuthenticated) {
 
-  // temporary
-  var bookIds = 'admin';  // normal user: [1,2,3]
-
   var path = require('path');
   var biblemesh_util = require('./biblemesh_util');
 
@@ -232,10 +229,8 @@ module.exports = function (app, connection, ensureAuthenticated) {
   // get epub_library.json with library listing for given user
   app.get('/epub_content/epub_library.json', ensureAuthenticated, function (req, res, next) {
 
-    // has bookIds array from authenticate
-
     // look those books up in the database and form the library
-    connection.query('SELECT * FROM `book`' + (bookIds=='admin' ? '' : ' WHERE id IN(?)'), [bookIds.concat([-1])] , function (err, rows, fields) {
+    connection.query('SELECT * FROM `book`' + (req.user.isAdmin ? '' : ' WHERE id IN(?)'), [req.user.bookIds.concat([-1])] , function (err, rows, fields) {
       if (err) return next(err);
 
       res.send(rows);
