@@ -27,8 +27,15 @@ module.exports = function (app, connection, ensureAuthenticated) {
   }
 
   // get current milliseconds timestamp for syncing clock with the client
-  app.get('/currenttime.json', function (req, res) {
-    res.send({ currentServerTime: biblemesh_util.getUTCTimeStamp() });
+  app.get('/usersetup.json', ensureAuthenticated, function (req, res) {
+    var returnData = {
+      userInfo: req.user,
+      currentServerTime: biblemesh_util.getUTCTimeStamp()
+    }
+    if(process.env.GOOGLE_ANALYTICS_CODE) {
+      returnData.gaCode = process.env.GOOGLE_ANALYTICS_CODE;
+    }
+    res.send(returnData);
   })
 
   // Accepts GET method to retrieve the app
