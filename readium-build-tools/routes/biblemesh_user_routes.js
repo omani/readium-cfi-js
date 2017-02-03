@@ -90,7 +90,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
   // read.biblemesh.com/users/{user_id}/books/{book_id}.json
   app.all('/users/:userId/books/:bookId.json', ensureAuthenticated,function (req, res, next) {
     
-    if(req.method == 'PATCH') {
+    if(['PATCH', 'POST'].indexOf(req.method) != -1) {
 
       containedOldPatch = false;
 
