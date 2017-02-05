@@ -112,7 +112,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
   // TODO: lock and unlock tables
 
       connection.query('SELECT * FROM `latest_location` WHERE user_id=? AND book_id=?; '
-        + 'SELECT cfi, updated_at, IF(note="", 0, 1) as hasnote FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
+        + 'SELECT spineIdRef, cfi, updated_at, IF(note="", 0, 1) as hasnote FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
         [req.params.userId, req.params.bookId, req.params.userId, req.params.bookId, biblemesh_util.NOT_DELETED_AT_TIME],
         function (err, results) {
           if (err) return next(err);
@@ -188,7 +188,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
                 }
               } else if(currentHighlightsUpdatedAtTimestamp[getHighlightId(highlight)] != null) {
                 queriesToRun.push({
-                  query: 'UPDATE `highlight` SET ? WHERE user_id=? AND book_id=? AND spineIdRef AND cfi=? AND deleted_at=?',
+                  query: 'UPDATE `highlight` SET ? WHERE user_id=? AND book_id=? AND spineIdRef=? AND cfi=? AND deleted_at=?',
                   vars: [highlight, req.params.userId, req.params.bookId, highlight.spineIdRef, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME]
                 });
               } else {
