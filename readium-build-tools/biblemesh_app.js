@@ -137,7 +137,7 @@ app.use('*', function(req, res, next) {
 
 // route RequireJS_config.js properly (for dev)
 app.get(['/RequireJS_config.js', '/book/RequireJS_config.js'], function (req, res) {
-  res.sendFile(path.join(process.cwd(), 'dev/RequireJS_config.js'))
+  res.sendFile(path.join(process.cwd(), 'dev/RequireJS_config.js'));
 })
 
 require('./routes/biblemesh_routes')(app, s3, connection, passport, samlStrategy, ensureAuthenticated);

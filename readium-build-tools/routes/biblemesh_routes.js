@@ -2,6 +2,7 @@ module.exports = function (app, s3, connection, passport, samlStrategy, ensureAu
 
   var path = require('path');
   var fs = require('fs');
+  var mime = require('mime');
 
   require('./biblemesh_auth_routes')(app, passport, samlStrategy);
   require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticated);
@@ -24,29 +25,42 @@ module.exports = function (app, s3, connection, passport, samlStrategy, ensureAu
           Key: urlWithoutQuery.replace(/^\//,'')
         };
 
-        params.Expires = 60
-        var url = s3.getSignedUrl('getObject', params, function(err, url) {
-          if(err) {
-            console.log('S3 getSignedUrl error on ' + params.Key, err);
-            res.status(404).send({ error: 'Not found' });
-          } else {
-            res.redirect(307, url);
-          }
-        });
-        
-        // s3.getObject(params, function(err, data) {
-        //   if (err) {
-        //     console.log('S3 file not found: ' + params.Key);
+        // params.Expires = 60
+        // var url = s3.getSignedUrl('getObject', params, function(err, url) {
+        //   if(err) {
+        //     console.log('S3 getSignedUrl error on ' + params.Key, err);
         //     res.status(404).send({ error: 'Not found' });
-        //   } else { 
-        //     res.set({
-        //       LastModified: data.LastModified,
-        //       ContentLength: data.ContentLength,
-        //       ContentType: data.ContentType,
-        //       ETag: data.ETag
-        //     }).send(new Buffer(data.Body));
+        //   } else {
+        //     res.redirect(307, url);
         //   }
         // });
+
+        if(req.headers['if-none-match']) {
+          params.IfNoneMatch = req.headers['if-none-match'];
+        }
+
+        s3.getObject(params, function(err, data) {
+          if (err) {
+            if (err.statusCode == 304) {
+              res.set({
+                'ETag': req.headers['if-none-match'],
+                'Last-Modified': req.headers['if-modified-since']
+              });
+              res.status(304);
+              res.send();
+            } else {
+              console.log('S3 file not found: ' + params.Key);
+              res.status(404).send({ error: 'Not found' });
+            }
+          } else { 
+            res.set({
+              'Last-Modified': data.LastModified,
+              'Content-Length': data.ContentLength,
+              'Content-Type': mime.lookup(urlWithoutQuery),
+              'ETag': data.ETag
+            }).send(new Buffer(data.Body));
+          }
+        });
         
       }
 
@@ -56,8 +70,9 @@ module.exports = function (app, s3, connection, passport, samlStrategy, ensureAu
 
       if(fs.existsSync(staticFile)) {
         res.sendFile(staticFile, {
-            dotfiles: "allow"
-        })
+            dotfiles: "allow",
+            cacheControl: false
+        });
       } else {
         console.log('File not found: ' + staticFile);
         res.status(404).send({ error: 'Not found' });
