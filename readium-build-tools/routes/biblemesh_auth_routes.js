@@ -4,14 +4,14 @@ module.exports = function (app, passport, samlStrategy) {
 
   // Shibboleth
   app.get('/login',
-    passport.authenticate('biblemesh_idp', { failureRedirect: '/login/fail' }),
+    passport.authenticate('bm', { failureRedirect: '/login/fail' }),
     function (req, res) {
       res.redirect('/');
     }
   );
 
   app.post('/login/callback',
-    passport.authenticate('biblemesh_idp', { failureRedirect: '/login/fail' }),
+    passport.authenticate('bm', { failureRedirect: '/login/fail' }),
     function(req, res) {
       res.redirect('/');
     }

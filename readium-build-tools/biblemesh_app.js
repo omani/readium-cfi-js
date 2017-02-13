@@ -14,6 +14,7 @@ var RedisStore = require('connect-redis')(session);
 var passport = require('passport');
 var saml = require('passport-saml');
 require('dotenv').load();  //loads the local environment
+var biblemesh_util = require('./routes/biblemesh_util');
 
 
 ////////////// SETUP SERVER //////////////
@@ -22,6 +23,26 @@ var port = parseInt(process.env.PORT, 10) || process.env.PORT || 8080;
 app.set('port', port);
 var server = http.createServer(app);
 var appURL = process.env.APP_URL || "https://read.biblemesh.com";
+
+
+////////////// SETUP STORAGE //////////////
+
+var s3 = new AWS.S3();
+
+var connection = mysql.createConnection({
+  host: process.env.RDS_HOSTNAME,
+  port: process.env.RDS_PORT,
+  user: process.env.RDS_USERNAME,
+  password: process.env.RDS_PASSWORD,
+  database: process.env.RDS_DB_NAME,
+  multipleStatements: true,
+  dateStrings: true
+})
+
+var redisOptions = {
+  host: process.env.REDIS_HOSTNAME,
+  port: process.env.REDIS_PORT
+}
 
 
 ////////////// SETUP PASSPORT //////////////
@@ -47,27 +68,82 @@ var strategyOpts = {
   disableRequestedAuthnContext: true
 };
 
-var strategyCallback = function(profile, done) {
-console.log('profile');
-console.log(profile);
-  return done(null, {
-    id: 1,
-    bookIds: [],  // ex. [1,2,3]
-    isAdmin: true
-  }); 
-};
+var strategyCallback = function(idp, profile, done) {
+  // console.log('profile', profile);
 
-var idpData = {
-  biblemesh_idp: {
-    entryPoint: "https://sandbox.biblemesh.com/idp/profile/SAML2/Redirect/SSO",
-    cert: fs.readFileSync(__dirname + '/cert/idp_cert.pem', 'utf8')
+  var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
+  var givenName = profile['urn:oid:2.5.4.42'] || '';
+  var bookIds = profile['bookIds'] ? profile['bookIds'].split(' ') : [];
+
+  if(!mail) {
+    done('Bad login.');
   }
+  
+  var completeLogin = function(userId) {
+    done(null, {
+      id: userId,
+      email: mail,
+      firstname: givenName,
+      bookIds: bookIds,
+      isAdmin: process.env.ADMIN_EMAILS.split(' ').indexOf(mail) != -1,
+      idp: idpCode,
+    });
+  }
+
+  connection.query('SELECT id FROM `user` WHERE email=?',
+    [mail],
+    function (err, rows) {
+      if (err) return next(err);
+
+      var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime(null, true);
+
+      if(rows.length == 0) {
+        connection.query('INSERT into `user` SET ?',
+          {
+            email: mail,
+            last_login_at: currentMySQLDatetime
+          },
+          function (err2, results) {
+            if (err2) return next(err2);
+
+            completeLogin(results.insertId);
+          }
+        );
+
+      } else {
+        connection.query('UPDATE `user` SET last_login_at=? WHERE email=?',
+          [currentMySQLDatetime, mail],
+          function (err2, rows2) {
+            if (err2) return next(err2);
+
+            completeLogin(rows[0].id);
+          }
+        );
+      }
+
+    }
+  )
 };
 
-for(var idp in idpData) {
-  samlStrategy = new saml.Strategy(Object.assign(idpData[idp], strategyOpts), strategyCallback);
-  passport.use(idp, samlStrategy);
-}
+// setup SAML strategies for IDPs
+connection.query('SELECT * FROM `idp`',
+  function (err, rows) {
+    if (err) return next(err);
+    
+    rows.forEach(function(row) {
+      samlStrategy = new saml.Strategy(
+        Object.assign({
+          entryPoint: row.entryPoint,
+          cert: row.cert
+        }, strategyOpts),
+        function(profile, done) {
+          strategyCallback(row.code, profile, done);
+        }
+      );
+      passport.use(row.code, samlStrategy);
+    });
+  }
+);
 
 function ensureAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
@@ -75,33 +151,16 @@ function ensureAuthenticated(req, res, next) {
   } else if (process.env.SKIP_AUTH) {
     req.user = {
       id: 1,
+      email: 'place@holder.com',
+      firstname: 'Jim',
       bookIds: [],  // ex. [1,2,3]
-      isAdmin: true
+      isAdmin: true,
+      idp: 'bm'
     }
     return next();
   } else {
     return res.redirect('/login');
   }
-}
-
-
-////////////// SETUP STORAGE //////////////
-
-var s3 = new AWS.S3();
-
-var connection = mysql.createConnection({
-  host: process.env.RDS_HOSTNAME,
-  port: process.env.RDS_PORT,
-  user: process.env.RDS_USERNAME,
-  password: process.env.RDS_PASSWORD,
-  database: process.env.RDS_DB_NAME,
-  multipleStatements: true,
-  dateStrings: true
-})
-
-var redisOptions = {
-  host: process.env.REDIS_HOSTNAME,
-  port: process.env.REDIS_PORT
 }
 
 

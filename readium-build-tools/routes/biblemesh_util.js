@@ -20,20 +20,25 @@ var biblemesh_util = {
     return d.getTime();
   },
 
-  timestampToMySQLDatetime: function(timestamp) {
+  timestampToMySQLDatetime: function(timestamp, noMilliseconds) {
     var specifyDigits = function(number, digits) {
       return ('0000000000000' + number).substr(digits * -1);
     }
 
     var date = new Date(timestamp);
 
-    return date.getUTCFullYear() + "-"
+    var formatted = date.getUTCFullYear() + "-"
       + specifyDigits(1 + date.getUTCMonth(), 2) + "-"
       + specifyDigits(date.getUTCDate(), 2) + " "
       + specifyDigits(date.getUTCHours(), 2) + ":"
       + specifyDigits(date.getUTCMinutes(), 2) + ":"
-      + specifyDigits(date.getUTCSeconds(), 2) + "."
-      + specifyDigits(date.getMilliseconds(), 3);
+      + specifyDigits(date.getUTCSeconds(), 2);
+    
+    if(!noMilliseconds) {
+      formatted += "." + specifyDigits(date.getMilliseconds(), 3);
+    }
+
+    return formatted;
   }
 
 }

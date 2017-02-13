@@ -87,6 +87,7 @@ module.exports = function (app, s3, connection, passport, samlStrategy, ensureAu
 
   // catch all else
   app.all('*', function (req, res) {
+    console.log('Invalid request', req);
     res.status(404).send({ error: 'Invalid request' });
   })
 
