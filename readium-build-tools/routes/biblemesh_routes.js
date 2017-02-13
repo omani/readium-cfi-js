@@ -71,7 +71,7 @@ module.exports = function (app, s3, connection, passport, samlStrategy, ensureAu
       if(fs.existsSync(staticFile)) {
         res.sendFile(staticFile, {
             dotfiles: "allow",
-            cacheControl: false
+            // cacheControl: false
         });
       } else {
         console.log('File not found: ' + staticFile);
