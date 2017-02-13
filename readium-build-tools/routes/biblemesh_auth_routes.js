@@ -1,17 +1,28 @@
-module.exports = function (app, passport, samlStrategy) {
+module.exports = function (app, passport, getAuthStrategyMetaData) {
 
   var fs = require('fs');
 
   // Shibboleth
   app.get('/login',
-    passport.authenticate('bm', { failureRedirect: '/login/fail' }),
+    function (req, res) {
+      // In the future, this will send a page to the user where they can choose the IDP to login with
+      res.redirect('/login/bm');
+    }
+  );
+
+  app.get('/login/:idpCode',
+    function(req, res, next) {
+      passport.authenticate(req.params.idpCode, { failureRedirect: '/login/fail' })(req, res, next);
+    },
     function (req, res) {
       res.redirect('/');
     }
   );
 
-  app.post('/login/callback',
-    passport.authenticate('bm', { failureRedirect: '/login/fail' }),
+  app.post('/login/:idpCode/callback',
+    function(req, res, next) {
+      passport.authenticate(req.params.idpCode, { failureRedirect: '/login/fail' })(req, res, next);
+    },
     function(req, res) {
       res.redirect('/');
     }
@@ -23,10 +34,12 @@ module.exports = function (app, passport, samlStrategy) {
     }
   );
 
-  app.get('/Shibboleth.sso/Metadata', 
+  app.get('/Shibboleth.sso/:idpCode/Metadata', 
     function(req, res) {
       res.type('application/xml');
-      res.status(200).send(samlStrategy.generateServiceProviderMetadata(fs.readFileSync(__dirname + '/../cert/cert.pem', 'utf8')));
+      res.status(200).send(
+        getAuthStrategyMetaData[req.params.idpCode]()
+      );
     }
   );
 

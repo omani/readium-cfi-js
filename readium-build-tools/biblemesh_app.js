@@ -55,21 +55,12 @@ passport.deserializeUser(function(user, done) {
   done(null, user);
 });
 
-var samlStrategy;
-var key = fs.readFileSync(__dirname + '/cert/key.pem', 'utf8');
-
-var strategyOpts = {
-  callbackUrl: appURL + "/login/callback",
-  issuer: appURL + "/shibboleth",
-  identifierFormat: null,
-  decryptionPvk: key,
-  privateCert: key,
-  validateInResponseTo: false,
-  disableRequestedAuthnContext: true
-};
+var getAuthStrategyMetaData = {};
 
 var strategyCallback = function(idp, profile, done) {
   // console.log('profile', profile);
+
+  console.log('strategy callback');
 
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
   var givenName = profile['urn:oid:2.5.4.42'] || '';
@@ -86,7 +77,7 @@ var strategyCallback = function(idp, profile, done) {
       firstname: givenName,
       bookIds: bookIds,
       isAdmin: process.env.ADMIN_EMAILS.split(' ').indexOf(mail) != -1,
-      idp: idpCode,
+      idpCode: idp,
     });
   }
 
@@ -129,18 +120,31 @@ var strategyCallback = function(idp, profile, done) {
 connection.query('SELECT * FROM `idp`',
   function (err, rows) {
     if (err) return next(err);
-    
+
     rows.forEach(function(row) {
-      samlStrategy = new saml.Strategy(
-        Object.assign({
+      var samlStrategy = new saml.Strategy(
+        {
+          issuer: appURL + "/shibboleth",
+          identifierFormat: null,
+          validateInResponseTo: false,
+          disableRequestedAuthnContext: true,
+          callbackUrl: appURL + "/login/" + row.code + "/callback",
           entryPoint: row.entryPoint,
-          cert: row.cert
-        }, strategyOpts),
+          cert: row.idpcert,
+          decryptionPvk: row.spkey,
+          privateCert: row.spkey
+        },
         function(profile, done) {
           strategyCallback(row.code, profile, done);
         }
       );
+
       passport.use(row.code, samlStrategy);
+
+      getAuthStrategyMetaData[row.code] = function() {
+        return samlStrategy.generateServiceProviderMetadata(row.spcert);
+      }
+
     });
   }
 );
@@ -155,7 +159,7 @@ function ensureAuthenticated(req, res, next) {
       firstname: 'Jim',
       bookIds: [],  // ex. [1,2,3]
       isAdmin: true,
-      idp: 'bm'
+      idpCode: 'bm'
     }
     return next();
   } else {
@@ -199,7 +203,7 @@ app.get(['/RequireJS_config.js', '/book/RequireJS_config.js'], function (req, re
   res.sendFile(path.join(process.cwd(), 'dev/RequireJS_config.js'));
 })
 
-require('./routes/biblemesh_routes')(app, s3, connection, passport, samlStrategy, ensureAuthenticated);
+require('./routes/biblemesh_routes')(app, s3, connection, passport, getAuthStrategyMetaData, ensureAuthenticated);
 
 
 ////////////// LISTEN //////////////

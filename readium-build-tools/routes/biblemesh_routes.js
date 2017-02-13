@@ -1,10 +1,10 @@
-module.exports = function (app, s3, connection, passport, samlStrategy, ensureAuthenticated) {
+module.exports = function (app, s3, connection, passport, getAuthStrategyMetaData, ensureAuthenticated) {
 
   var path = require('path');
   var fs = require('fs');
   var mime = require('mime');
 
-  require('./biblemesh_auth_routes')(app, passport, samlStrategy);
+  require('./biblemesh_auth_routes')(app, passport, getAuthStrategyMetaData);
   require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticated);
   require('./biblemesh_user_routes')(app, connection, ensureAuthenticated);
 
