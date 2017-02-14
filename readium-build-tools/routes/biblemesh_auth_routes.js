@@ -6,6 +6,11 @@ module.exports = function (app, passport, getAuthStrategyMetaData) {
   app.get('/login',
     function (req, res) {
       // In the future, this will send a page to the user where they can choose the IDP to login with
+
+      // IMPORTANT: When we move to multiple IDPs, I should probably add a `uploaded_by` field to the `book` table
+      // to only allow admins from that same IDP to delete that book. OR, have a different environment variable
+      // for super admins who can delete books.
+
       res.redirect('/login/bm');
     }
   );
