@@ -45,6 +45,22 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
     });
   }
 
+  function deleteBook(bookId, next, callback) {
+    connection.query('DELETE FROM `book` WHERE id=?', bookId, function (err, result) {
+      if (err) return next(err);
+
+      emptyS3Folder({
+        Bucket: process.env.S3_BUCKET,
+        Prefix: 'epub_content/book_' + bookId + '/'
+      }, function(err, data) {
+        if (err) return next(err);
+        
+        callback();
+
+      });
+    });
+  }
+
   // delete a book
   app.delete(['/', '/book/:bookId'], ensureAuthenticated, function (req, res, next) {
 
@@ -53,23 +69,13 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
       return;
     }
 
-    connection.query('DELETE FROM `book` WHERE id=?', req.params.bookId, function (err, result) {
-      if (err) return next(err);
-
-      emptyS3Folder({
-        Bucket: process.env.S3_BUCKET,
-        Prefix: 'epub_content/book_' + req.params.bookId + '/'
-      }, function(err, data) {
-        if (err) return next(err);
-        
-        res.send({ success: true });
-
-      });
+    deleteBook(req.params.bookId, next, function() {
+      res.send({ success: true });
     });
   })
 
   // import
-  app.post('/importbooks.json', ensureAuthenticated, function (req, res, next) {
+  app.post('/importbook.json', ensureAuthenticated, function (req, res, next) {
 
     if(!req.user.isAdmin) {
       res.send({ error: "You do not have proper permissions to do this action." });
@@ -80,7 +86,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
     var toUploadDir = tmpDir + '/toupload';
     var epubToS3SuccessCount = 0;
     var epubFilePaths = [];
-    var bookId, bookRow;
+    var bookRow;
 
     var checkDone = function() {
       if(epubToS3SuccessCount == epubFilePaths.length) {
@@ -91,19 +97,22 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
         bookRow.author = bookRow.creator || bookRow.publisher || '';
         delete bookRow.creator;
         delete bookRow.publisher;
-        connection.query('INSERT into `book` SET ?', [bookRow], function (err, result) {
+        connection.query('UPDATE `book` SET ? WHERE id=?', [bookRow, bookRow.id], function (err, result) {
           if (err) {
             return next(err);
           }
           
-          res.send({ success: true });
+          res.send({
+            success: true,
+            bookId: bookRow.id
+          });
         })
 
       }
     }
     
     var putEPUBFile = function(relfilepath, body) {
-      var key = 'epub_content/book_' + bookId + '/' + relfilepath;
+      var key = 'epub_content/book_' + bookRow.id + '/' + relfilepath;
       // console.log('Upload file to S3: ' + key);
       s3.putObject({
         Bucket: process.env.S3_BUCKET,
@@ -135,119 +144,118 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
       }
     };
 
+    deleteFolderRecursive(tmpDir);
+
     fs.mkdir(tmpDir, function(err) {
 
       var form = new multiparty.Form({
         uploadDir: tmpDir
       });
 
+      var processedOneFile = false;  // at this point, we only allow one upload at a time
+
       form.on('file', function(name, file) {
 
-        var filename = file.originalFilename || '';
-        var filenameParts = filename.match(/^book_([0-9]+)\.epub$/);
+        if(processedOneFile) return;
+        processedOneFile = true;
 
-        if(!filenameParts) {
+        var filename = file.originalFilename;
+
+        if(!filename) {
           deleteFolderRecursive(tmpDir);
-          res.send({ error: "Invalid file name(s)." });
+          res.send({ error: "Invalid file name." });
           return;
         }
 
-        bookId = parseInt(filenameParts[1]);
+        bookRow = {
+          title: 'Unknown',
+          author: '',
+          updated_at: biblemesh_util.timestampToMySQLDatetime()
+        };
 
-        // Check that id does not exist. If it does, abort
         // Put row into book table
-        connection.query('SELECT id FROM `book` WHERE id=?', [bookId] , function (err, rows, fields) {
+        connection.query('INSERT INTO `book` SET ?', [bookRow] , function (err, results) {
           if (err) {
             // clean up
             deleteFolderRecursive(tmpDir);
             return next(err);
           }
 
-          if(rows.length > 0) {
+          bookRow.id = results.insertId;
+          bookRow.rootUrl = 'epub_content/book_' + bookRow.id;
 
-            deleteFolderRecursive(tmpDir);
-            res.send({ error: "File already exists." });
-            
-          } else {
-            
-            emptyS3Folder({
-              Bucket: process.env.S3_BUCKET,
-              Prefix: 'epub_content/book_' + bookId + '/'
-            }, function(err, data) {
-              if (err) {
-                // clean up
-                deleteFolderRecursive(tmpDir);
-                return next(err);
-              }
-            
-              bookRow = {
-                id: bookId,
-                title: 'Unknown',
-                rootUrl: 'epub_content/book_' + bookId,
-                updated_at: biblemesh_util.timestampToMySQLDatetime(biblemesh_util.getUTCTimeStamp()).replace(/\.[0-9]*/, ''),
-              };
+          emptyS3Folder({
+            Bucket: process.env.S3_BUCKET,
+            Prefix: 'epub_content/book_' + bookRow.id + '/'
+          }, function(err, data) {
+            if (err) {
+              // clean up
+              deleteFolderRecursive(tmpDir);
+              return next(err);
+            }
+          
+            deleteFolderRecursive(toUploadDir);
 
-              deleteFolderRecursive(toUploadDir);
+            fs.mkdir(toUploadDir, function(err) {
+              
+              try {
+                var zip = new admzip(file.path);
+                zip.extractAllTo(toUploadDir);
 
-              fs.mkdir(toUploadDir, function(err) {
-                
-                try {
-                  var zip = new admzip(file.path);
-                  zip.extractAllTo(toUploadDir);
+                fs.rename(file.path, toUploadDir + '/book.epub', function(err) {
 
-                  fs.rename(file.path, toUploadDir + '/book.epub', function(err) {
+                  getEPUBFilePaths(toUploadDir);
+                  epubFilePaths.forEach(function(path) {
+                    // TODO: Setup search
+                    // TODO: make thumbnail smaller
+                    // TODO: make fonts public
 
-                    getEPUBFilePaths(toUploadDir);
-                    epubFilePaths.forEach(function(path) {
-                      // TODO: Setup search
-                      // TODO: make thumbnail smaller
-                      // TODO: make fonts public
+                    if(path == toUploadDir + '/META-INF/container.xml') {
+                      var contents = fs.readFileSync(path, "utf-8");
+                      var matches = contents.match(/["']([^"']+\.opf)["']/);
+                      if(matches) {
+                        var opfContents = fs.readFileSync(toUploadDir + '/' + matches[1], "utf-8");
 
-                      if(path == toUploadDir + '/META-INF/container.xml') {
-                        var contents = fs.readFileSync(path, "utf-8");
-                        var matches = contents.match(/["']([^"']+\.opf)["']/);
-                        if(matches) {
-                          var opfContents = fs.readFileSync(toUploadDir + '/' + matches[1], "utf-8");
+                        ['title','creator','publisher'].forEach(function(dcTag) {
+                          var dcTagRegEx = new RegExp('<dc:' + dcTag + '>([^<]+)</dc:' + dcTag + '>');
+                          var opfPathMatches1 = opfContents.match(dcTagRegEx);
+                          if(opfPathMatches1) {
+                            bookRow[dcTag] = opfPathMatches1[1];
+                          }
 
-                          ['title','creator','publisher'].forEach(function(dcTag) {
-                            var dcTagRegEx = new RegExp('<dc:' + dcTag + '>([^<]+)</dc:' + dcTag + '>');
-                            var opfPathMatches1 = opfContents.match(dcTagRegEx);
-                            if(opfPathMatches1) {
-                              bookRow[dcTag] = opfPathMatches1[1];
-                            }
+                        });
 
-                          });
-
-                          var opfPathMatches2 = opfContents.match(/<meta ([^>]*)name=["']cover["']([^>]*)\/>/);
-                          var metaCover = opfPathMatches2 && opfPathMatches2[1] + opfPathMatches2[2]
-                          if(metaCover) {
-                            var metaCoverMatches = metaCover.match(/content=["']([^"']+)["']/);
-                            if(metaCoverMatches) {
-                              var coverItemRegEx = new RegExp('<item ([^>]*)id=["\']' + metaCoverMatches[1] + '["\']([^>]*)\/>');
-                              var coverItemMatches = opfContents.match(coverItemRegEx);
-                              var coverItem = coverItemMatches && coverItemMatches[1] + coverItemMatches[2];
-                              if(coverItem) {
-                                var coverItemHrefMatches = coverItem.match(/href=["']([^"']+)["']/);
-                                if(coverItemHrefMatches) {
-                                  bookRow.coverHref = 'epub_content/book_' + bookId + '/' + matches[1].replace(/[^\/]*$/, '') + coverItemHrefMatches[1];
-                                }
+                        var opfPathMatches2 = opfContents.match(/<meta ([^>]*)name=["']cover["']([^>]*)\/>/);
+                        var metaCover = opfPathMatches2 && opfPathMatches2[1] + opfPathMatches2[2]
+                        if(metaCover) {
+                          var metaCoverMatches = metaCover.match(/content=["']([^"']+)["']/);
+                          if(metaCoverMatches) {
+                            var coverItemRegEx = new RegExp('<item ([^>]*)id=["\']' + metaCoverMatches[1] + '["\']([^>]*)\/>');
+                            var coverItemMatches = opfContents.match(coverItemRegEx);
+                            var coverItem = coverItemMatches && coverItemMatches[1] + coverItemMatches[2];
+                            if(coverItem) {
+                              var coverItemHrefMatches = coverItem.match(/href=["']([^"']+)["']/);
+                              if(coverItemHrefMatches) {
+                                bookRow.coverHref = 'epub_content/book_' + bookRow.id + '/' + matches[1].replace(/[^\/]*$/, '') + coverItemHrefMatches[1];
                               }
                             }
                           }
                         }
                       }
+                    }
 
-                      putEPUBFile(path.replace(toUploadDir + '/', ''), fs.createReadStream(path));
-                    });
+                    putEPUBFile(path.replace(toUploadDir + '/', ''), fs.createReadStream(path));
                   });
+                });
 
-                } catch (e) {
-                  deleteFolderRecursive(tmpDir);
+              } catch (e) {
+                deleteFolderRecursive(tmpDir);
+                deleteBook(bookRow.id, next, function() {
                   res.send({ error: "Unable to process this file." });
-                }
-              });
+                });
+              }
             });
-          }
+          });
         })
       });
 

@@ -141,7 +141,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
             } else {
               var fields = {
                 cfi: req.body.latest_location,
-                updated_at: biblemesh_util.timestampToMySQLDatetime(req.body.updated_at)
+                updated_at: biblemesh_util.timestampToMySQLDatetime(req.body.updated_at, true)
               };
               if(results[0].length > 0) {
                 queriesToRun.push({
@@ -173,11 +173,11 @@ module.exports = function (app, connection, ensureAuthenticated) {
                 return;
               }
 
-              highlight.updated_at = biblemesh_util.timestampToMySQLDatetime(highlight.updated_at);
+              highlight.updated_at = biblemesh_util.timestampToMySQLDatetime(highlight.updated_at, true);
               // since I do not know whether to INSERT or UPDATE, just DELETE them all then then INSERT
               if(highlight._delete) {
                 if(currentHighlightsHasNote[getHighlightId(highlight)]) {
-                  var now = biblemesh_util.timestampToMySQLDatetime(biblemesh_util.getUTCTimeStamp());
+                  var now = biblemesh_util.timestampToMySQLDatetime(null, true);
                   queriesToRun.push({
                     query: 'UPDATE `highlight` SET deleted_at=? WHERE user_id=? AND book_id=? AND spineIdRef=? && cfi=? AND deleted_at=?',
                     vars: [now, req.params.userId, req.params.bookId, highlight.spineIdRef, highlight.cfi, biblemesh_util.NOT_DELETED_AT_TIME]
@@ -239,12 +239,15 @@ module.exports = function (app, connection, ensureAuthenticated) {
   app.get('/epub_content/epub_library.json', ensureAuthenticated, function (req, res, next) {
 
     // look those books up in the database and form the library
-    connection.query('SELECT * FROM `book`' + (req.user.isAdmin ? '' : ' WHERE id IN(?)'), [req.user.bookIds.concat([-1])] , function (err, rows, fields) {
-      if (err) return next(err);
+    connection.query('SELECT * FROM `book` WHERE rootUrl IS NOT NULL' + (req.user.isAdmin ? '' : ' AND id IN(?)'),
+      [req.user.bookIds.concat([-1])],
+      function (err, rows, fields) {
+        if (err) return next(err);
 
-      res.send(rows);
+        res.send(rows);
 
-    })
+      }
+    )
   })
   
 }

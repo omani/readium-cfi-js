@@ -86,7 +86,7 @@ var strategyCallback = function(idp, profile, done) {
     function (err, rows) {
       if (err) return next(err);
 
-      var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime(null, true);
+      var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
 
       if(rows.length == 0) {
         connection.query('INSERT into `user` SET ?',

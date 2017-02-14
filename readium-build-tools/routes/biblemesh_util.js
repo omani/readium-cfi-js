@@ -20,12 +20,12 @@ var biblemesh_util = {
     return d.getTime();
   },
 
-  timestampToMySQLDatetime: function(timestamp, noMilliseconds) {
+  timestampToMySQLDatetime: function(timestamp, doMilliseconds) {
     var specifyDigits = function(number, digits) {
       return ('0000000000000' + number).substr(digits * -1);
     }
 
-    var date = new Date(timestamp);
+    var date = timestamp ? new Date(timestamp) : new Date();
 
     var formatted = date.getUTCFullYear() + "-"
       + specifyDigits(1 + date.getUTCMonth(), 2) + "-"
@@ -34,7 +34,7 @@ var biblemesh_util = {
       + specifyDigits(date.getUTCMinutes(), 2) + ":"
       + specifyDigits(date.getUTCSeconds(), 2);
     
-    if(!noMilliseconds) {
+    if(doMilliseconds) {
       formatted += "." + specifyDigits(date.getMilliseconds(), 3);
     }
 
