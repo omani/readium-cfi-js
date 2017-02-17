@@ -1,8 +1,7 @@
-module.exports = function (app, passport, getAuthStrategyMetaData) {
+module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
 
   var fs = require('fs');
 
-  // Shibboleth
   app.get('/login',
     function (req, res) {
       // In the future, this will send a page to the user where they can choose the IDP to login with
@@ -29,7 +28,9 @@ module.exports = function (app, passport, getAuthStrategyMetaData) {
       passport.authenticate(req.params.idpCode, { failureRedirect: '/login/fail' })(req, res, next);
     },
     function(req, res) {
-      res.redirect('/');
+      var loginRedirect = req.session.loginRedirect || '/';
+      delete req.session.loginRedirect;
+      res.redirect(loginRedirect);
     }
   );
 
@@ -39,11 +40,25 @@ module.exports = function (app, passport, getAuthStrategyMetaData) {
     }
   );
 
+  app.get('/logout',
+    ensureAuthenticated,
+    function (req, res, next) {
+      authFuncs[req.user.idpCode].logout(req, res, next);
+    }
+  );
+
+  app.all('/logout/callback',
+    function (req, res) {
+      req.logout();
+      res.redirect('/');
+    }
+  );
+
   app.get('/Shibboleth.sso/:idpCode/Metadata', 
     function(req, res) {
       res.type('application/xml');
       res.status(200).send(
-        getAuthStrategyMetaData[req.params.idpCode]()
+        authFuncs[req.params.idpCode].getMetaData()
       );
     }
   );

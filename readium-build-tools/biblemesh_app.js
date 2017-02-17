@@ -55,21 +55,21 @@ passport.deserializeUser(function(user, done) {
   done(null, user);
 });
 
-var getAuthStrategyMetaData = {};
+var authFuncs = {};
 
 var strategyCallback = function(idp, profile, done) {
-  // console.log('profile', profile);
-
-  console.log('strategy callback');
+  console.log('profile', profile);
 
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
+  var idpUserId = profile['idpUserId'];
   var givenName = profile['urn:oid:2.5.4.42'] || '';
   var bookIds = profile['bookIds'] ? profile['bookIds'].split(' ') : [];
 
-  if(!mail) {
+  if(!mail || !idpUserId) {
+    console.log(profile);
     done('Bad login.');
   }
-  
+
   var completeLogin = function(userId) {
     done(null, {
       id: userId,
@@ -77,12 +77,15 @@ var strategyCallback = function(idp, profile, done) {
       firstname: givenName,
       bookIds: bookIds,
       isAdmin: process.env.ADMIN_EMAILS.split(' ').indexOf(mail) != -1,
-      idpCode: idp,
+      idpCode: idp.code,
+      idpLogoSrc: idp.logoSrc,
+      nameID: profile.nameID,
+      nameIDFormat: profile.nameIDFormat,
     });
   }
 
-  connection.query('SELECT id FROM `user` WHERE email=?',
-    [mail],
+  connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_code=?',
+    [idpUserId, idp],
     function (err, rows) {
       if (err) return next(err);
 
@@ -91,6 +94,8 @@ var strategyCallback = function(idp, profile, done) {
       if(rows.length == 0) {
         connection.query('INSERT into `user` SET ?',
           {
+            user_id_from_idp: idpUserId,
+            idp_code: idp,
             email: mail,
             last_login_at: currentMySQLDatetime
           },
@@ -102,9 +107,9 @@ var strategyCallback = function(idp, profile, done) {
         );
 
       } else {
-        connection.query('UPDATE `user` SET last_login_at=? WHERE email=?',
-          [currentMySQLDatetime, mail],
-          function (err2, rows2) {
+        connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_code=?',
+          [currentMySQLDatetime, mail, idpUserId, idp],
+          function (err2, results) {
             if (err2) return next(err2);
 
             completeLogin(rows[0].id);
@@ -130,19 +135,35 @@ connection.query('SELECT * FROM `idp`',
           disableRequestedAuthnContext: true,
           callbackUrl: appURL + "/login/" + row.code + "/callback",
           entryPoint: row.entryPoint,
+          logoutUrl: row.logoutUrl,
+          logoutCallbackUrl: appURL + "/logout/callback",
           cert: row.idpcert,
           decryptionPvk: row.spkey,
           privateCert: row.spkey
         },
         function(profile, done) {
-          strategyCallback(row.code, profile, done);
+          strategyCallback(row, profile, done);
         }
       );
 
       passport.use(row.code, samlStrategy);
 
-      getAuthStrategyMetaData[row.code] = function() {
-        return samlStrategy.generateServiceProviderMetadata(row.spcert);
+      authFuncs[row.code] = {
+        getMetaData: function() {
+          return samlStrategy.generateServiceProviderMetadata(row.spcert);
+        },
+        logout: function(req, res, next) {
+          if(req.user.nameID && req.user.nameIDFormat) {
+            samlStrategy.logout(req, function(err2, req2){
+              if (err2) return next(err2);
+
+              //redirect to the IdP Logout URL
+              res.redirect(req2);
+            });
+          } else {
+            res.redirect("/logout/callback");
+          }
+        }
       }
 
     });
@@ -159,10 +180,15 @@ function ensureAuthenticated(req, res, next) {
       firstname: 'Jim',
       bookIds: [],  // ex. [1,2,3]
       isAdmin: true,
-      idpCode: 'bm'
+      idpCode: 'bm',
+      idpLogoSrc: 'https://learn.biblemesh.com/theme/image.php/biblemesh/theme/1487014624/biblemesh-logo-clear'
     }
     return next();
   } else {
+    req.session.loginRedirect = req.url;
+    if(req.headers['App-Request']) {
+      req.session.cookie.maxAge = parseInt(process.env.APP_SESSION_MAXAGE);
+    }
     return res.redirect('/login');
   }
 }
@@ -177,10 +203,10 @@ app.use(bodyParser.json()); // for parsing application/json
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(session({
   store: new RedisStore(redisOptions),
-  secret: process.env.SESSION_SECRET,
+  secret: process.env.SESSION_SECRET || 'secret',
   saveUninitialized: false,
   resave: false,
-  cookie : { httpOnly: true, maxAge: process.env.SESSION_MAXAGE || 86400000 } // configure when sessions expires
+  cookie : { httpOnly: true, maxAge: parseInt(process.env.SESSION_MAXAGE) } // configure when sessions expires
 }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -203,7 +229,7 @@ app.get(['/RequireJS_config.js', '/book/RequireJS_config.js'], function (req, re
   res.sendFile(path.join(process.cwd(), 'dev/RequireJS_config.js'));
 })
 
-require('./routes/biblemesh_routes')(app, s3, connection, passport, getAuthStrategyMetaData, ensureAuthenticated);
+require('./routes/biblemesh_routes')(app, s3, connection, passport, authFuncs, ensureAuthenticated);
 
 
 ////////////// LISTEN //////////////
