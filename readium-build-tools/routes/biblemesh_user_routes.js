@@ -32,6 +32,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
       userInfo: {
         id: req.user.id,
         firstname: req.user.firstname,
+        idpName: req.user.idpName,
         idpLogoSrc: req.user.idpLogoSrc
       },
       currentServerTime: biblemesh_util.getUTCTimeStamp()

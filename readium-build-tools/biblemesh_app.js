@@ -71,23 +71,22 @@ var strategyCallback = function(idp, profile, done) {
   }
 
   var completeLogin = function(userId) {
-    done(null, {
+    done(null, Object.assign(profile, {
       id: userId,
       email: mail,
       firstname: givenName,
       bookIds: bookIds,
       isAdmin: process.env.ADMIN_EMAILS.split(' ').indexOf(mail) != -1,
       idpCode: idp.code,
-      idpLogoSrc: idp.logoSrc,
-      nameID: profile.nameID,
-      nameIDFormat: profile.nameIDFormat,
-    });
+      idpName: idp.name,
+      idpLogoSrc: idp.logoSrc
+    }));
   }
 
   connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_code=?',
-    [idpUserId, idp],
+    [idpUserId, idp.code],
     function (err, rows) {
-      if (err) return next(err);
+      if (err) return done(err);
 
       var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
 
@@ -95,12 +94,12 @@ var strategyCallback = function(idp, profile, done) {
         connection.query('INSERT into `user` SET ?',
           {
             user_id_from_idp: idpUserId,
-            idp_code: idp,
+            idp_code: idp.code,
             email: mail,
             last_login_at: currentMySQLDatetime
           },
           function (err2, results) {
-            if (err2) return next(err2);
+            if (err2) return done(err2);
 
             completeLogin(results.insertId);
           }
@@ -108,9 +107,9 @@ var strategyCallback = function(idp, profile, done) {
 
       } else {
         connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_code=?',
-          [currentMySQLDatetime, mail, idpUserId, idp],
+          [currentMySQLDatetime, mail, idpUserId, idp.code],
           function (err2, results) {
-            if (err2) return next(err2);
+            if (err2) return done(err2);
 
             completeLogin(rows[0].id);
           }
@@ -124,7 +123,10 @@ var strategyCallback = function(idp, profile, done) {
 // setup SAML strategies for IDPs
 connection.query('SELECT * FROM `idp`',
   function (err, rows) {
-    if (err) return next(err);
+    if (err) {
+      console.log("ERROR: Could not setup IDPs.", err);
+      return;
+    }
 
     rows.forEach(function(row) {
       var samlStrategy = new saml.Strategy(
@@ -181,6 +183,7 @@ function ensureAuthenticated(req, res, next) {
       bookIds: [],  // ex. [1,2,3]
       isAdmin: true,
       idpCode: 'bm',
+      idpName: 'BibleMesh',
       idpLogoSrc: 'https://learn.biblemesh.com/theme/image.php/biblemesh/theme/1487014624/biblemesh-logo-clear'
     }
     return next();

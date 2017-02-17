@@ -11,6 +11,7 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
       // for super admins who can delete books.
 
       res.redirect('/login/bm');
+
     }
   );
 
