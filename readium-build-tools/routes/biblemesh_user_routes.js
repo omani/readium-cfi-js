@@ -63,16 +63,16 @@ module.exports = function (app, connection, ensureAuthenticated) {
 
           var baseUrl = process.env.APP_URL || "https://read.biblemesh.com";
           var urlWithEditing = baseUrl + req.originalUrl.replace(/([\?&])editing=1&?/, '$1');
-          var abridgedHighlight = req.query.highlight;
-          if(abridgedHighlight.length > 116) {
-            abridgedHighlight = abridgedHighlight.substring(0, 113) + '...';
+          var abridgedNote = req.query.note || ' ';
+          if(abridgedNote.length > 116) {
+            abridgedNote = abridgedNote.substring(0, 113) + '...';
           }
 
           var sharePage = fs.readFileSync(__dirname + '/../templates/biblemesh_share-page.html', 'utf8')
             .replace(/{{page_title}}/g, 'Quote from ' + rows[0].title)
             .replace(/{{quote}}/g, req.query.highlight)
             .replace(/{{quote_noquotes}}/g, req.query.highlight.replace(/"/g, '&quot;'))
-            .replace(/{{quote_abridged_escaped}}/g, encodeURIComp(abridgedHighlight))
+            .replace(/{{note_abridged_escaped}}/g, encodeURIComp(abridgedNote))
             .replace(/{{url_noquotes}}/g, urlWithEditing.replace(/"/g, '&quot;'))
             .replace(/{{url_escaped}}/g, encodeURIComp(urlWithEditing))
             .replace(/{{url_nosharer}}/g, 
