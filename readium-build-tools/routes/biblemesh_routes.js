@@ -9,7 +9,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
   require('./biblemesh_user_routes')(app, connection, ensureAuthenticated);
 
   // serve the static files
-  app.get('*', ensureAuthenticated, function (req, res) {
+  app.get('*', ensureAuthenticated, function (req, res, next) {
     var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'');
     var urlPieces = urlWithoutQuery.split('/');
     var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
@@ -17,9 +17,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
     // check that they have access if this is a book
     if(urlPieces[1] == 'epub_content') {
 
-      if(!req.user.isAdmin && req.user.bookIds.indexOf(bookId) == -1) {
-        res.status(403).send({ error: 'Forbidden' });
-      } else {
+      var getAssetFromS3 = function() {
         var params = {
           Bucket: process.env.S3_BUCKET,
           Key: urlWithoutQuery.replace(/^\//,'')
@@ -61,7 +59,26 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
             }).send(new Buffer(data.Body));
           }
         });
-        
+      }
+
+      if(!req.user.isAdmin && req.user.bookIds.indexOf(bookId) == -1) {
+
+        // allow through only if this is the cover image (since that is used on the sharing page)
+        connection.query('SELECT * FROM `book` WHERE id=?',
+          [bookId],
+          function (err, rows, fields) {
+            if (err) return next(err);
+
+            if(rows[0] && rows[0].coverHref == urlWithoutQuery.replace(/^\//,'')) {
+              getAssetFromS3();
+            } else {
+              res.status(403).send({ error: 'Forbidden' });
+            }
+          }
+        );
+
+      } else {
+        getAssetFromS3();
       }
 
     } else if(process.env.IS_DEV || ['css','fonts','images','scripts'].indexOf(urlPieces[1]) != -1) {

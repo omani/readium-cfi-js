@@ -1,6 +1,7 @@
 module.exports = function (app, connection, ensureAuthenticated) {
 
   var path = require('path');
+  var fs = require('fs');
   var biblemesh_util = require('./biblemesh_util');
 
   var paramsOk = function(params, reqParams, optParams) {
@@ -26,12 +27,17 @@ module.exports = function (app, connection, ensureAuthenticated) {
     return highlight.spineIdRef + ' ' + highlight.cfi;
   }
 
+  var encodeURIComp = function(comp) {
+    return encodeURIComponent(comp).replace(/%20/g, "+");
+  }
+
   // get current milliseconds timestamp for syncing clock with the client
   app.get('/usersetup.json', ensureAuthenticated, function (req, res) {
     var returnData = {
       userInfo: {
         id: req.user.id,
         firstname: req.user.firstname,
+        lastname: req.user.lastname,
         idpName: req.user.idpName,
         idpLogoSrc: req.user.idpLogoSrc,
         isAdmin: req.user.isAdmin
@@ -42,6 +48,82 @@ module.exports = function (app, connection, ensureAuthenticated) {
       returnData.gaCode = process.env.GOOGLE_ANALYTICS_CODE;
     }
     res.send(returnData);
+  })
+
+  // get shared quotation
+  app.get('/book/:bookId', function (req, res, next) {
+
+    if(req.query.highlight) {
+      // If "creating" query parameter is present, then they can get rid of their name and/or note (and change their note?) 
+
+      connection.query('SELECT * FROM `book` WHERE id=?',
+        [req.params.bookId],
+        function (err, rows, fields) {
+          if (err) return next(err);
+
+          var baseUrl = process.env.APP_URL || "https://read.biblemesh.com";
+          var urlWithEditing = baseUrl + req.originalUrl.replace(/([\?&])editing=1&?/, '$1');
+          var abridgedHighlight = req.query.highlight;
+          if(abridgedHighlight.length > 116) {
+            abridgedHighlight = abridgedHighlight.substring(0, 113) + '...';
+          }
+
+          var sharePage = fs.readFileSync(__dirname + '/../templates/biblemesh_share-page.html', 'utf8')
+            .replace(/{{page_title}}/g, 'Quote from ' + rows[0].title)
+            .replace(/{{quote}}/g, req.query.highlight)
+            .replace(/{{quote_noquotes}}/g, req.query.highlight.replace(/"/g, '&quot;'))
+            .replace(/{{quote_abridged_escaped}}/g, encodeURIComp(abridgedHighlight))
+            .replace(/{{url_noquotes}}/g, urlWithEditing.replace(/"/g, '&quot;'))
+            .replace(/{{url_escaped}}/g, encodeURIComp(urlWithEditing))
+            .replace(/{{url_nosharer}}/g, 
+              baseUrl +
+              req.originalUrl
+                .replace(/([\?&])note=[^&]*&?/g, '$1')
+                .replace(/([\?&])sharer=[^&]*&?/g, '$1')
+            )
+            .replace(/{{read_here_url}}/g, baseUrl + req.originalUrl.replace(/\?.*$/, '') + '?goto=' + encodeURIComp(req.query.goto))
+            .replace(/{{book_image_url}}/g, baseUrl + '/' + rows[0].coverHref)
+            .replace(/{{book_title}}/g, rows[0].title)
+            .replace(/{{book_author}}/g, rows[0].author)
+            .replace(/{{comment}}/g, 'Comment')
+            .replace(/{{share}}/g, 'Share:')
+            .replace(/{{copy_link}}/g, 'Copy link')
+            .replace(/{{copied}}/g, 'Copied')
+            .replace(/{{sharer_remove_class}}/g, req.query.editing ? '' : 'hidden');
+
+          if(req.isAuthenticated()) {
+            if(!req.user.isAdmin && req.user.bookIds.indexOf(req.params.bookId) == -1) {
+              sharePage = sharePage
+                .replace(/{{read_class}}/g, 'hidden');
+            } else {
+              sharePage = sharePage
+                .replace(/{{read_here}}/g, 'Read at the quote')
+                .replace(/{{read_class}}/g, '');
+            }
+          } else {
+            sharePage = sharePage
+              .replace(/{{read_here}}/g, 'Login to the Reader')
+              .replace(/{{read_class}}/g, '');
+          }
+
+          if(req.query.note) {
+            sharePage = sharePage
+              .replace(/{{sharer_class}}/g, '')
+              .replace(/{{sharer_name}}/g, req.query.sharer || '')
+              .replace(/{{sharer_note}}/g, req.query.note);
+          } else {
+            sharePage = sharePage
+              .replace(/{{sharer_class}}/g, 'hidden');
+          }
+
+          res.send(sharePage);
+        }
+      )
+
+    } else {
+      next();
+    }
+
   })
 
   // Accepts GET method to retrieve the app

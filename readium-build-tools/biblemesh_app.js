@@ -6,7 +6,6 @@ var http = require('http');
 var bodyParser = require('body-parser');
 // var cookieParser = require('cookie-parser');
 var path = require('path');
-var fs = require('fs');
 var mysql = require('mysql');
 var AWS = require('aws-sdk');
 var session = require('express-session');
@@ -75,6 +74,7 @@ var strategyCallback = function(idp, profile, done) {
       id: userId,
       email: mail,
       firstname: givenName,
+      lastname: sn,
       bookIds: bookIds,
       isAdmin: process.env.ADMIN_EMAILS.split(' ').indexOf(mail) != -1,
       idpCode: idp.code,
@@ -180,6 +180,7 @@ function ensureAuthenticated(req, res, next) {
       id: 1,
       email: 'place@holder.com',
       firstname: 'Jim',
+      lastname: 'Smith',
       bookIds: [],  // ex. [1,2,3]
       isAdmin: true,
       idpCode: 'bm',
