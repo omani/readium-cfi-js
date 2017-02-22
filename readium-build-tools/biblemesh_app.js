@@ -62,6 +62,7 @@ var strategyCallback = function(idp, profile, done) {
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
   var idpUserId = profile['idpUserId'];
   var givenName = profile['urn:oid:2.5.4.42'] || '';
+  var sn = profile['urn:oid:2.5.4.4'] || '';
   var bookIds = profile['bookIds'] ? profile['bookIds'].split(' ') : [];
 
   if(!mail || !idpUserId) {
