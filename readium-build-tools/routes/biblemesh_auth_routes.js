@@ -1,4 +1,4 @@
-module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
+module.exports = function (app, passport, authFuncs, ensureAuthenticated, log) {
 
   var fs = require('fs');
 
@@ -10,6 +10,7 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
       // to only allow admins from that same IDP to delete that book. OR, have a different environment variable
       // for super admins who can delete books.
 
+      log('Redirect to IDP login');
       res.redirect('/login/bm');
 
     }
@@ -17,6 +18,7 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
 
   app.get('/login/:idpCode',
     function(req, res, next) {
+      log('Authenticate user', 2);
       passport.authenticate(req.params.idpCode, { failureRedirect: '/login/fail' })(req, res, next);
     },
     function (req, res) {
@@ -26,17 +28,20 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
 
   app.post('/login/:idpCode/callback',
     function(req, res, next) {
+      log('Authenticate user (callback)', 2);
       passport.authenticate(req.params.idpCode, { failureRedirect: '/login/fail' })(req, res, next);
     },
     function(req, res) {
       var loginRedirect = req.session.loginRedirect || '/';
       delete req.session.loginRedirect;
+      log(['Post login redirect', loginRedirect]);
       res.redirect(loginRedirect);
     }
   );
 
   app.get('/login/fail', 
     function(req, res) {
+      log('Report login failure');
       res.status(401).send('Login failed');
     }
   );
@@ -50,6 +55,7 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
 
   app.all('/logout/callback',
     function (req, res) {
+      log('Logout callback (will delete cookie)', 2);
       req.logout();
       res.redirect('/');
     }
@@ -57,6 +63,7 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated) {
 
   app.get('/Shibboleth.sso/:idpCode/Metadata', 
     function(req, res) {
+      log('Metadata request');
       res.type('application/xml');
       res.status(200).send(
         authFuncs[req.params.idpCode].getMetaData()

@@ -22,7 +22,15 @@ var port = parseInt(process.env.PORT, 10) || process.env.PORT || 8080;
 app.set('port', port);
 var server = http.createServer(app);
 var appURL = process.env.APP_URL || "https://read.biblemesh.com";
-
+var log = function(msgs, importanceLevel) {
+  var logLevel = parseInt(process.env.LOGLEVEL) || 3;   // 1=verbose, 2=important, 3=errors only
+  importanceLevel = importanceLevel || 1;
+  if(importanceLevel >= logLevel) {
+    if(!Array.isArray(msgs)) msgs = [msgs];
+    msgs.unshift(['LOG ','INFO','ERR '][importanceLevel - 1]);
+    console.log.apply(this, msgs);
+  }
+}
 
 ////////////// SETUP STORAGE //////////////
 
@@ -57,7 +65,7 @@ passport.deserializeUser(function(user, done) {
 var authFuncs = {};
 
 var strategyCallback = function(idp, profile, done) {
-  console.log('profile', profile);
+  log(['Profile from idp', profile], 2);
 
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
   var idpUserId = profile['idpUserId'];
@@ -67,11 +75,12 @@ var strategyCallback = function(idp, profile, done) {
     .map(function(bId) { return parseInt(bId); });
 
   if(!mail || !idpUserId) {
-    console.log(profile);
+    log(['Bad login', profile], 3);
     done('Bad login.');
   }
 
   var completeLogin = function(userId) {
+    log('Login successful', 2);
     done(null, Object.assign(profile, {
       id: userId,
       email: mail,
@@ -93,6 +102,7 @@ var strategyCallback = function(idp, profile, done) {
       var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
 
       if(rows.length == 0) {
+        log('Creating new user row');
         connection.query('INSERT into `user` SET ?',
           {
             user_id_from_idp: idpUserId,
@@ -103,16 +113,19 @@ var strategyCallback = function(idp, profile, done) {
           function (err2, results) {
             if (err2) return done(err2);
 
+            log('User row created successfully');
             completeLogin(results.insertId);
           }
         );
 
       } else {
+        log('Updating new user row');
         connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_code=?',
           [currentMySQLDatetime, mail, idpUserId, idp.code],
           function (err2, results) {
             if (err2) return done(err2);
 
+            log('User row updated successfully');
             completeLogin(rows[0].id);
           }
         );
@@ -126,7 +139,7 @@ var strategyCallback = function(idp, profile, done) {
 connection.query('SELECT * FROM `idp`',
   function (err, rows) {
     if (err) {
-      console.log("ERROR: Could not setup IDPs.", err);
+      log(["Could not setup IDPs.", err], 3);
       return;
     }
 
@@ -157,14 +170,18 @@ connection.query('SELECT * FROM `idp`',
           return samlStrategy.generateServiceProviderMetadata(row.spcert);
         },
         logout: function(req, res, next) {
+          log(['Logout', req.user], 2);
           if(req.user.nameID && req.user.nameIDFormat) {
+            log('Redirect to SLO');
             samlStrategy.logout(req, function(err2, req2){
               if (err2) return next(err2);
 
+              log('Back from SLO');
               //redirect to the IdP Logout URL
               res.redirect(req2);
             });
           } else {
+            log('No call to SLO', 2);
             res.redirect("/logout/callback");
           }
         }
@@ -191,9 +208,11 @@ function ensureAuthenticated(req, res, next) {
     }
     return next();
   } else {
+    log('Redirecting to authenticate', 2);
     req.session.loginRedirect = req.url;
     if(req.headers['App-Request']) {
       req.session.cookie.maxAge = parseInt(process.env.APP_SESSION_MAXAGE);
+      log(['Max age to set on cookie', req.session.cookie.maxAge]);
     }
     return res.redirect('/login');
   }
@@ -223,6 +242,7 @@ app.use(passport.session());
 // force HTTPS
 app.use('*', function(req, res, next) {  
   if(!req.secure && req.headers['x-forwarded-proto'] !== 'https' && process.env.REQUIRE_HTTPS) {
+    log('Go to HTTPS');
     var secureUrl = "https://" + req.headers['host'] + req.url; 
     res.redirect(secureUrl);
   } else {
@@ -235,7 +255,7 @@ app.get(['/RequireJS_config.js', '/book/RequireJS_config.js'], function (req, re
   res.sendFile(path.join(process.cwd(), 'dev/RequireJS_config.js'));
 })
 
-require('./routes/biblemesh_routes')(app, s3, connection, passport, authFuncs, ensureAuthenticated);
+require('./routes/biblemesh_routes')(app, s3, connection, passport, authFuncs, ensureAuthenticated, log);
 
 
 ////////////// LISTEN //////////////

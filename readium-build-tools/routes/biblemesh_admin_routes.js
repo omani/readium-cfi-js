@@ -1,4 +1,4 @@
-module.exports = function (app, s3, connection, ensureAuthenticated) {
+module.exports = function (app, s3, connection, ensureAuthenticated, log) {
 
   var path = require('path');
   var fs = require('fs');
@@ -7,6 +7,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
   var biblemesh_util = require('./biblemesh_util');
 
   var deleteFolderRecursive = function(path) {
+    log(['Delete folder', path], 2);
     if( fs.existsSync(path) ) {
       fs.readdirSync(path).forEach(function(file,index){
         var curPath = path + "/" + file;
@@ -22,6 +23,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
 
 
   function emptyS3Folder(params, callback){
+    log(['Empty S3 folder', params], 2);
     s3.listObjects(params, function(err, data) {
       if (err) return callback(err);
 
@@ -46,6 +48,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
   }
 
   function deleteBook(bookId, next, callback) {
+    log(['Delete book', bookId], 2);
     connection.query('DELETE FROM `book` WHERE id=?', bookId, function (err, result) {
       if (err) return next(err);
 
@@ -61,15 +64,23 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
     });
   }
 
+  function decodeHtml(html) {
+    var txt = document.createElement("textarea");
+    txt.innerHTML = html;
+    return txt.value;
+  }
+
   // delete a book
   app.delete(['/', '/book/:bookId'], ensureAuthenticated, function (req, res, next) {
 
     if(!req.user.isAdmin) {
+      log('No permission to delete book', 3);
       res.send({ error: "You do not have proper permissions to do this action." });
       return;
     }
 
     deleteBook(req.params.bookId, next, function() {
+      log('Delete successful', 2);
       res.send({ success: true });
     });
   })
@@ -78,6 +89,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
   app.post('/importbook.json', ensureAuthenticated, function (req, res, next) {
 
     if(!req.user.isAdmin) {
+      log('No permission to import book', 3);
       res.send({ error: "You do not have proper permissions to do this action." });
       return;
     }
@@ -97,11 +109,13 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
         bookRow.author = bookRow.creator || bookRow.publisher || '';
         delete bookRow.creator;
         delete bookRow.publisher;
+        log(['Update book row', bookRow], 2);
         connection.query('UPDATE `book` SET ? WHERE id=?', [bookRow, bookRow.id], function (err, result) {
           if (err) {
             return next(err);
           }
           
+          log('Import successful', 2);
           res.send({
             success: true,
             bookId: bookRow.id
@@ -113,14 +127,13 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
     
     var putEPUBFile = function(relfilepath, body) {
       var key = 'epub_content/book_' + bookRow.id + '/' + relfilepath;
-      // console.log('Upload file to S3: ' + key);
+      log(['Upload file to S3', key]);
       s3.putObject({
         Bucket: process.env.S3_BUCKET,
         Key: key,
         Body: body,
         ContentLength: body.byteCount,
       }, function(err, data) {
-        // console.log('Return from S3 file upload. File: ' + key);
         if (err) {
           // clean up
           deleteFolderRecursive(tmpDir);
@@ -174,6 +187,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
         };
 
         // Put row into book table
+        log(['Insert book row', bookRow], 2);
         connection.query('INSERT INTO `book` SET ?', [bookRow] , function (err, results) {
           if (err) {
             // clean up
@@ -217,10 +231,10 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
                         var opfContents = fs.readFileSync(toUploadDir + '/' + matches[1], "utf-8");
 
                         ['title','creator','publisher'].forEach(function(dcTag) {
-                          var dcTagRegEx = new RegExp('<dc:' + dcTag + '>([^<]+)</dc:' + dcTag + '>');
+                          var dcTagRegEx = new RegExp('<dc:' + dcTag + '[^>]*>([^<]+)</dc:' + dcTag + '>');
                           var opfPathMatches1 = opfContents.match(dcTagRegEx);
                           if(opfPathMatches1) {
-                            bookRow[dcTag] = opfPathMatches1[1];
+                            bookRow[dcTag] = decodeHtml(opfPathMatches1[1]);
                           }
 
                         });
@@ -249,6 +263,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated) {
                 });
 
               } catch (e) {
+                log(['Import book exception', e], 3);
                 deleteFolderRecursive(tmpDir);
                 deleteBook(bookRow.id, next, function() {
                   res.send({ error: "Unable to process this file." });

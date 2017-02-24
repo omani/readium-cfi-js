@@ -1,4 +1,4 @@
-module.exports = function (app, connection, ensureAuthenticated) {
+module.exports = function (app, connection, ensureAuthenticated, log) {
 
   var path = require('path');
   var fs = require('fs');
@@ -47,6 +47,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
     if(process.env.GOOGLE_ANALYTICS_CODE) {
       returnData.gaCode = process.env.GOOGLE_ANALYTICS_CODE;
     }
+    log(['Deliver user setup', returnData]);
     res.send(returnData);
   })
 
@@ -56,6 +57,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
     if(req.query.highlight) {
       // If "creating" query parameter is present, then they can get rid of their name and/or note (and change their note?) 
 
+      log(['Find book for share page', req.params.bookId]);
       connection.query('SELECT * FROM `book` WHERE id=?',
         [req.params.bookId],
         function (err, rows, fields) {
@@ -116,6 +118,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
               .replace(/{{sharer_class}}/g, 'hidden');
           }
 
+          log('Deliver share page');
           res.send(sharePage);
         }
       )
@@ -130,8 +133,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
   // read.biblemesh.com
   // read.biblemesh.com/book/{book_id}
   app.get(['/', '/book/:bookId'], ensureAuthenticated, function (req, res) {
-    console.log(req.user);
-
+    log(['Deliver index for user', req.user]);
     res.sendFile(path.join(process.cwd(), process.env.APP_PATH || '/index.html'))
   })
 
@@ -140,6 +142,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
   app.get('/users/:userId/books/:bookId.json', ensureAuthenticated, function (req, res, next) {
 
     // build the userData object
+    log(['Look up latest location', req.params.userId, req.params.bookId]);
     connection.query('SELECT * FROM `latest_location` WHERE user_id=? AND book_id=?',
       [req.params.userId, req.params.bookId],
       function (err, rows) {
@@ -148,6 +151,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
         var row = rows[0];
 
         if(!row) {
+            log('Deliver null userData');
             res.send(null);
 
         } else {
@@ -168,6 +172,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
               });
 
               bookUserData.highlights = rows2;
+              log(['Deliver userData for book', bookUserData]);
               res.send(bookUserData);
 
             }
@@ -182,6 +187,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
     
     if(['PATCH', 'POST'].indexOf(req.method) != -1) {
 
+      log(['Attempting patch', req.body]);
       containedOldPatch = false;
 
       // A JSON array of user-data book objects is sent to the Readium server,
@@ -218,6 +224,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
 
           if(req.body.latest_location) {
             if(!paramsOk(req.body, ['updated_at','latest_location'],['highlights'])) {
+              log(['Invalid parameter(s)', req.body], 3);
               res.status(400).send();
               return;
             }
@@ -251,6 +258,7 @@ module.exports = function (app, connection, ensureAuthenticated) {
             req.body.highlights.forEach(function(highlight) {
               
               if(!paramsOk(highlight, ['updated_at','spineIdRef','cfi'], ['color','note','_delete'])) {
+                log(['Invalid parameter(s)', req.body], 3);
                 res.status(400).send();
                 return;
               }
@@ -295,9 +303,9 @@ module.exports = function (app, connection, ensureAuthenticated) {
           var runAQuery = function() {
             if(queriesToRun.length > 0) {
               var query = queriesToRun.shift();
+              log(['Patch query', query]);
               connection.query(query.query, query.vars, function (err, result) {
                 if (err) {
-                  console.log(query);
                   return next(err);
                 }
                 runAQuery();
@@ -306,9 +314,11 @@ module.exports = function (app, connection, ensureAuthenticated) {
             } else {
               if(containedOldPatch) {
                 // When one or more object was not updated due to an old updated_at timestamp (i.e. stale data).
+                log('Patch contained old data', 2);
                 res.status(412).send();
               } else {
                 // When there is success on all objects
+                log('Patch successful');
                 res.status(200).send();
               }
             }
@@ -327,11 +337,13 @@ module.exports = function (app, connection, ensureAuthenticated) {
   app.get('/epub_content/epub_library.json', ensureAuthenticated, function (req, res, next) {
 
     // look those books up in the database and form the library
+    log('Lookup library');
     connection.query('SELECT * FROM `book` WHERE rootUrl IS NOT NULL' + (req.user.isAdmin ? '' : ' AND id IN(?)'),
       [req.user.bookIds.concat([-1])],
       function (err, rows, fields) {
         if (err) return next(err);
 
+        log(['Deliver library', rows]);
         res.send(rows);
 
       }

@@ -1,12 +1,12 @@
-module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthenticated) {
+module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthenticated, log) {
 
   var path = require('path');
   var fs = require('fs');
   var mime = require('mime');
 
-  require('./biblemesh_auth_routes')(app, passport, authFuncs, ensureAuthenticated);
-  require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticated);
-  require('./biblemesh_user_routes')(app, connection, ensureAuthenticated);
+  require('./biblemesh_auth_routes')(app, passport, authFuncs, ensureAuthenticated, log);
+  require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticated, log);
+  require('./biblemesh_user_routes')(app, connection, ensureAuthenticated, log);
 
   var getAssetFromS3 = function(req, res, next) {
     var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'');
@@ -29,6 +29,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
       params.IfNoneMatch = req.headers['if-none-match'];
     }
 
+    log(['Get S3 object', params.Key]);
     s3.getObject(params, function(err, data) {
       if (err) {
         if (err.statusCode == 304) {
@@ -39,10 +40,11 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
           res.status(304);
           res.send();
         } else {
-          console.log('S3 file not found: ' + params.Key);
+          log(['S3 file not found', params.Key], 2);
           res.status(404).send({ error: 'Not found' });
         }
       } else { 
+        log('Deliver S3 object');
         res.set({
           'Last-Modified': data.LastModified,
           'Content-Length': data.ContentLength,
@@ -59,14 +61,17 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
     var urlPieces = urlWithoutQuery.split('/');
     var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
 
+    log(['Lookup book to serve cover image', bookId]);
     connection.query('SELECT * FROM `book` WHERE id=?',
       [bookId],
       function (err, rows, fields) {
         if (err) return next(err);
 
         if(rows[0] && rows[0].coverHref == urlWithoutQuery.replace(/^\//,'')) {
+          log('Is book cover');
           getAssetFromS3(req, res, next);
         } else {
+          log('Not book cover');
           next();
         }
       }
@@ -84,6 +89,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
     if(urlPieces[1] == 'epub_content') {
 
       if(!req.user.isAdmin && req.user.bookIds.indexOf(bookId) == -1) {
+        log(['They do not have access to this book', bookId], 2);
         res.status(403).send({ error: 'Forbidden' });
       } else {
         getAssetFromS3(req, res, next);
@@ -94,25 +100,26 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
       var staticFile = path.join(process.cwd(), urlWithoutQuery);
 
       if(fs.existsSync(staticFile)) {
+        log(['Deliver static file', staticFile]);
         res.sendFile(staticFile, {
             dotfiles: "allow",
             // cacheControl: false
         });
       } else {
-        console.log('File not found: ' + staticFile);
+        log(['File not found', staticFile], 2);
         res.status(404).send({ error: 'Not found' });
       }
         
 
     } else {
-      console.log('Forbidden file or directory: ' + urlPieces[1] + ' - ' + urlWithoutQuery);
+      log(['Forbidden file or directory', urlWithoutQuery], 3);
       res.status(403).send({ error: 'Forbidden' });
     }
   })
 
   // catch all else
   app.all('*', function (req, res) {
-    console.log('Invalid request', req);
+    log(['Invalid request', req], 3);
     res.status(404).send({ error: 'Invalid request' });
   })
 
