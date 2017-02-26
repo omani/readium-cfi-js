@@ -5,6 +5,8 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
   var multiparty = require('multiparty');
   var admzip = require('adm-zip');
   var biblemesh_util = require('./biblemesh_util');
+  var Entities = require('html-entities').AllHtmlEntities;
+  var entities = new Entities();
 
   var deleteFolderRecursive = function(path) {
     log(['Delete folder', path], 2);
@@ -62,12 +64,6 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
 
       });
     });
-  }
-
-  function decodeHtml(html) {
-    var txt = document.createElement("textarea");
-    txt.innerHTML = html;
-    return txt.value;
   }
 
   // delete a book
@@ -234,7 +230,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
                           var dcTagRegEx = new RegExp('<dc:' + dcTag + '[^>]*>([^<]+)</dc:' + dcTag + '>');
                           var opfPathMatches1 = opfContents.match(dcTagRegEx);
                           if(opfPathMatches1) {
-                            bookRow[dcTag] = decodeHtml(opfPathMatches1[1]);
+                            bookRow[dcTag] = entities.decode(opfPathMatches1[1]);
                           }
 
                         });

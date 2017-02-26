@@ -127,6 +127,8 @@ dependencies:
 
     "mime": '1.3.4'
 
+    "html-entities": '1.2.0'
+
 #####################################################################
 # These dependencies can be fetched by using the "--dev" option
 # in "npm install --dev readium-cfi-js".
