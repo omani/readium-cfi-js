@@ -103,7 +103,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
         log(['Deliver static file', staticFile]);
         res.sendFile(staticFile, {
             dotfiles: "allow",
-            // cacheControl: false
+            cacheControl: urlWithoutQuery=='/css/annotations.css' ? false : true
         });
       } else {
         log(['File not found', staticFile], 2);
