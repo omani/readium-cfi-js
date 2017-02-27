@@ -207,7 +207,13 @@ function ensureAuthenticated(req, res, next) {
       idpLogoSrc: 'https://learn.biblemesh.com/theme/image.php/biblemesh/theme/1487014624/biblemesh-logo-clear'
     }
     return next();
-  } else {
+  } else if(
+    req.headers['App-Request']
+    || (
+      req.method == 'GET'
+      && req.originalUrl.match(/^\/(book\/[^\/]*|\?.*)?$/)
+    )
+  ) {  // library or book call
     log('Redirecting to authenticate', 2);
     req.session.loginRedirect = req.url;
     if(req.headers['App-Request']) {
@@ -215,6 +221,8 @@ function ensureAuthenticated(req, res, next) {
       log(['Max age to set on cookie', req.session.cookie.maxAge]);
     }
     return res.redirect('/login');
+  } else {
+    return res.status(403).send({ error: 'Please login' });
   }
 }
 

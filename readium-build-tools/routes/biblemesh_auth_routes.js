@@ -57,7 +57,11 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated, log) {
     function (req, res) {
       log('Logout callback (will delete cookie)', 2);
       req.logout();
-      res.redirect('/');
+      if(req.query.noredirect) {
+        res.send({ success: true });
+      } else {
+        res.redirect('/');
+      }
     }
   );
 
