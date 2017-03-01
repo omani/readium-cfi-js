@@ -7,6 +7,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
   var biblemesh_util = require('./biblemesh_util');
   var Entities = require('html-entities').AllHtmlEntities;
   var entities = new Entities();
+  var sharp = require('sharp');
 
   var deleteFolderRecursive = function(path) {
     log(['Delete folder', path], 2);
@@ -256,7 +257,19 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
 
                     putEPUBFile(path.replace(toUploadDir + '/', ''), fs.createReadStream(path));
                   });
+
+                  if(bookRow.coverHref) {
+                    var baseCoverHref = bookRow.coverHref.replace('epub_content/book_' + bookRow.id, '');
+                    sharp(toUploadDir + baseCoverHref)
+                      .resize(75)
+                      .png()
+                      .toBuffer()
+                      .then(function(imgData) {
+                        putEPUBFile('cover_thumbnail_created_on_import.png', imgData);
+                      });
+                  }
                 });
+
 
               } catch (e) {
                 log(['Import book exception', e], 3);

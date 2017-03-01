@@ -129,6 +129,8 @@ dependencies:
 
     "html-entities": '1.2.0'
 
+    "sharp": '0.17.2'
+
 #####################################################################
 # These dependencies can be fetched by using the "--dev" option
 # in "npm install --dev readium-cfi-js".
