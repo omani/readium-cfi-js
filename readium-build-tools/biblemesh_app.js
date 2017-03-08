@@ -208,10 +208,12 @@ function ensureAuthenticated(req, res, next) {
     }
     return next();
   } else if(
-    req.headers['App-Request']
-    || (
-      req.method == 'GET'
-      && req.originalUrl.match(/^\/(book\/[^\/]*|\?.*)?$/)
+    req.method == 'GET'
+    && (
+      req.headers['App-Request']
+      && req.originalUrl.match(/^\/usersetup\.json/)
+    ) || (
+      req.originalUrl.match(/^\/(book\/[^\/]*|\?.*)?$/)
     )
   ) {  // library or book call
     log('Redirecting to authenticate', 2);
