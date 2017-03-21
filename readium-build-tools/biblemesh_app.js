@@ -204,13 +204,13 @@ function ensureAuthenticated(req, res, next) {
       isAdmin: true,
       idpCode: 'bm',
       idpName: 'BibleMesh',
-      idpLogoSrc: 'https://learn.biblemesh.com/theme/image.php/biblemesh/theme/1487014624/biblemesh-logo-clear'
+      idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png'
     }
     return next();
   } else if(
     req.method == 'GET'
     && (
-      req.headers['App-Request']
+      req.headers['app-request']
       && req.originalUrl.match(/^\/usersetup\.json/)
     ) || (
       req.originalUrl.match(/^\/(book\/[^\/]*|\?.*)?$/)
@@ -218,7 +218,7 @@ function ensureAuthenticated(req, res, next) {
   ) {  // library or book call
     log('Redirecting to authenticate', 2);
     req.session.loginRedirect = req.url;
-    if(req.headers['App-Request']) {
+    if(req.headers['app-request']) {
       req.session.cookie.maxAge = parseInt(process.env.APP_SESSION_MAXAGE);
       log(['Max age to set on cookie', req.session.cookie.maxAge]);
     }
