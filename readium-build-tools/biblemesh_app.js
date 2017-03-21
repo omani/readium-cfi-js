@@ -90,7 +90,8 @@ var strategyCallback = function(idp, profile, done) {
       isAdmin: process.env.ADMIN_EMAILS.split(' ').indexOf(mail) != -1,
       idpCode: idp.code,
       idpName: idp.name,
-      idpLogoSrc: idp.logoSrc
+      idpLogoSrc: idp.logoSrc,
+      idpLang: idp.language || 'en'
     }));
   }
 
@@ -204,7 +205,8 @@ function ensureAuthenticated(req, res, next) {
       isAdmin: true,
       idpCode: 'bm',
       idpName: 'BibleMesh',
-      idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png'
+      idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png',
+      idpLang: 'en'
     }
     return next();
   } else if(

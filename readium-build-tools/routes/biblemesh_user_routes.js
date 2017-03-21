@@ -4,6 +4,18 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
   var fs = require('fs');
   var biblemesh_util = require('./biblemesh_util');
 
+  var shareLanguages = {
+    "en": {
+      "share_" : "Share:",
+      "copy_link" : "Copy link",
+      "copied" : "Copied",
+      "quote_from_X" : "Quote from {title}",
+      "read_at_the_quote" : "Read at the quote",
+      "login_to_the_reader" : "Login to the Reader",
+      "comment" : "Comment"
+    }
+  }
+
   var paramsOk = function(params, reqParams, optParams) {
     reqParams = reqParams || [];
     optParams = optParams || [];
@@ -40,6 +52,7 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
         lastname: req.user.lastname,
         idpName: req.user.idpName,
         idpLogoSrc: req.user.idpLogoSrc,
+        idpLang: req.user.idpLang,
         isAdmin: req.user.isAdmin
       },
       currentServerTime: biblemesh_util.getUTCTimeStamp()
@@ -53,6 +66,13 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
 
   // get shared quotation
   app.get('/book/:bookId', function (req, res, next) {
+
+    var shareLanguageVariables = shareLanguages[
+      req.isAuthenticated()
+        ? req.user.idpLang
+        : 'en'
+    ];
+    shareLanguageVariables = shareLanguageVariables || shareLanguages['en'];
 
     if(req.query.highlight) {
       // If "creating" query parameter is present, then they can get rid of their name and/or note (and change their note?) 
@@ -71,7 +91,7 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
           }
 
           var sharePage = fs.readFileSync(__dirname + '/../templates/biblemesh_share-page.html', 'utf8')
-            .replace(/{{page_title}}/g, 'Quote from ' + rows[0].title)
+            .replace(/{{page_title}}/g, shareLanguageVariables.quote_from_X.replace('{title}', rows[0].title))
             .replace(/{{quote}}/g, req.query.highlight)
             .replace(/{{quote_noquotes}}/g, req.query.highlight.replace(/"/g, '&quot;'))
             .replace(/{{note_abridged_escaped}}/g, encodeURIComp(abridgedNote))
@@ -87,10 +107,10 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
             .replace(/{{book_image_url}}/g, baseUrl + '/' + rows[0].coverHref)
             .replace(/{{book_title}}/g, rows[0].title)
             .replace(/{{book_author}}/g, rows[0].author)
-            .replace(/{{comment}}/g, 'Comment')
-            .replace(/{{share}}/g, 'Share:')
-            .replace(/{{copy_link}}/g, 'Copy link')
-            .replace(/{{copied}}/g, 'Copied')
+            .replace(/{{comment}}/g, shareLanguageVariables.comment)
+            .replace(/{{share}}/g, shareLanguageVariables.share_)
+            .replace(/{{copy_link}}/g, shareLanguageVariables.copy_link)
+            .replace(/{{copied}}/g, shareLanguageVariables.copied)
             .replace(/{{sharer_remove_class}}/g, req.query.editing ? '' : 'hidden');
 
           if(req.isAuthenticated()) {
@@ -99,12 +119,12 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
                 .replace(/{{read_class}}/g, 'hidden');
             } else {
               sharePage = sharePage
-                .replace(/{{read_here}}/g, 'Read at the quote')
+                .replace(/{{read_here}}/g, shareLanguageVariables.read_at_the_quote)
                 .replace(/{{read_class}}/g, '');
             }
           } else {
             sharePage = sharePage
-              .replace(/{{read_here}}/g, 'Login to the Reader')
+              .replace(/{{read_here}}/g, shareLanguageVariables.login_to_the_reader)
               .replace(/{{read_class}}/g, '');
           }
 

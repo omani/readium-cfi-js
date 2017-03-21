@@ -72,7 +72,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
 
     if(!req.user.isAdmin) {
       log('No permission to delete book', 3);
-      res.send({ error: "You do not have proper permissions to do this action." });
+      res.status(403).send({ errorType: "biblemesh_no_permission" });
       return;
     }
 
@@ -87,7 +87,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
 
     if(!req.user.isAdmin) {
       log('No permission to import book', 3);
-      res.send({ error: "You do not have proper permissions to do this action." });
+      res.status(403).send({ errorType: "biblemesh_no_permission" });
       return;
     }
 
@@ -173,7 +173,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
 
         if(!filename) {
           deleteFolderRecursive(tmpDir);
-          res.send({ error: "Invalid file name." });
+          res.status(400).send({ errorType: "biblemesh_invalid_filename" });
           return;
         }
 
@@ -275,7 +275,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
                 log(['Import book exception', e], 3);
                 deleteFolderRecursive(tmpDir);
                 deleteBook(bookRow.id, next, function() {
-                  res.send({ error: "Unable to process this file." });
+                  res.status(400).send({errorType: "biblemesh_unable_to_process"});
                 });
               }
             });
