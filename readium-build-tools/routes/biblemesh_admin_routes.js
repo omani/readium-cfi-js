@@ -236,22 +236,28 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
 
                         });
 
-                        var opfPathMatches2 = opfContents.match(/<meta ([^>]*)name=["']cover["']([^>]*)\/>/);
-                        var metaCover = opfPathMatches2 && opfPathMatches2[1] + opfPathMatches2[2]
-                        if(metaCover) {
-                          var metaCoverMatches = metaCover.match(/content=["']([^"']+)["']/);
-                          if(metaCoverMatches) {
-                            var coverItemRegEx = new RegExp('<item ([^>]*)id=["\']' + metaCoverMatches[1] + '["\']([^>]*)\/>');
-                            var coverItemMatches = opfContents.match(coverItemRegEx);
-                            var coverItem = coverItemMatches && coverItemMatches[1] + coverItemMatches[2];
-                            if(coverItem) {
-                              var coverItemHrefMatches = coverItem.match(/href=["']([^"']+)["']/);
-                              if(coverItemHrefMatches) {
-                                bookRow.coverHref = 'epub_content/book_' + bookRow.id + '/' + matches[1].replace(/[^\/]*$/, '') + coverItemHrefMatches[1];
-                              }
+                        var setCoverHref = function(attr, attrVal) {
+                          if(bookRow.coverHref) return;
+                          var coverItemRegEx = new RegExp('<item ([^>]*)' + attr + '=["\']' + attrVal + '["\']([^>]*)\/>');
+                          var coverItemMatches = opfContents.match(coverItemRegEx);
+                          var coverItem = coverItemMatches && coverItemMatches[1] + coverItemMatches[2];
+                          if(coverItem) {
+                            var coverItemHrefMatches = coverItem.match(/href=["']([^"']+)["']/);
+                            if(coverItemHrefMatches) {
+                              bookRow.coverHref = 'epub_content/book_' + bookRow.id + '/' + matches[1].replace(/[^\/]*$/, '') + coverItemHrefMatches[1];
                             }
                           }
                         }
+
+                        var opfPathMatches2 = opfContents.match(/<meta ([^>]*)name=["']cover["']([^>]*)\/>/);
+                        var metaCover = opfPathMatches2 && opfPathMatches2[1] + opfPathMatches2[2];
+                        if(metaCover) {
+                          var metaCoverMatches = metaCover.match(/content=["']([^"']+)["']/);
+                          if(metaCoverMatches) {
+                            setCoverHref('id', metaCoverMatches[1]);
+                          }
+                        }
+                        setCoverHref('properties', 'cover-image');
                       }
                     }
 

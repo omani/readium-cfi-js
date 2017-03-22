@@ -91,6 +91,7 @@ var strategyCallback = function(idp, profile, done) {
       idpCode: idp.code,
       idpName: idp.name,
       idpLogoSrc: idp.logoSrc,
+      idpSmallLogoSrc: idp.smallLogoSrc || idp.logoSrc,
       idpLang: idp.language || 'en'
     }));
   }
@@ -206,6 +207,7 @@ function ensureAuthenticated(req, res, next) {
       idpCode: 'bm',
       idpName: 'BibleMesh',
       idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png',
+      idpSmallLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo-small.png',
       idpLang: 'en'
     }
     return next();

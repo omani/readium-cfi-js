@@ -52,6 +52,7 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
         lastname: req.user.lastname,
         idpName: req.user.idpName,
         idpLogoSrc: req.user.idpLogoSrc,
+        idpSmallLogoSrc: req.user.idpSmallLogoSrc,
         idpLang: req.user.idpLang,
         isAdmin: req.user.isAdmin
       },
