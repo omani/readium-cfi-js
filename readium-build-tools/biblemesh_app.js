@@ -87,7 +87,7 @@ var strategyCallback = function(idp, profile, done) {
       firstname: givenName,
       lastname: sn,
       bookIds: bookIds,
-      isAdmin: process.env.ADMIN_EMAILS.split(' ').indexOf(mail) != -1,
+      isAdmin: process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1,
       idpCode: idp.code,
       idpName: idp.name,
       idpLogoSrc: idp.logoSrc,
