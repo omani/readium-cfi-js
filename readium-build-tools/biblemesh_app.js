@@ -220,6 +220,17 @@ function ensureAuthenticated(req, res, next) {
       req.originalUrl.match(/^\/(book\/[^\/]*|\?.*)?$/)
     )
   ) {  // library or book call
+    if(req.query.widget) {
+      return res.send(`
+        <script>
+          parent.postMessage({
+              action: 'forbidden',
+              iframeid: window.name,
+              payload: 'Unable to display book. You are not logged in.',
+          }, '*');
+        </script>
+      `);
+    }
     log('Redirecting to authenticate', 2);
     req.session.loginRedirect = req.url;
     if(req.headers['app-request']) {

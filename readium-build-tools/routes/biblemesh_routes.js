@@ -79,6 +79,19 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
 
   })
 
+  // serve widget_setup.js with or without auth
+  app.get(['/src/js/widget_setup.js', '/scripts/widget_setup.js'], function (req, res, next) {
+    var staticFile = path.join(process.cwd(), req.url);
+
+    if(fs.existsSync(staticFile)) {
+      log(['Deliver static file', staticFile]);
+      res.sendFile(staticFile, {
+          dotfiles: "allow",
+          cacheControl: false
+      });
+    }
+  })
+
   // serve the static files
   app.get('*', ensureAuthenticated, function (req, res, next) {
     var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'');
