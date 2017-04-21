@@ -9,7 +9,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
   require('./biblemesh_user_routes')(app, connection, ensureAuthenticated, log);
 
   var getAssetFromS3 = function(req, res, next) {
-    var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'');
+    var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'').replace(/%20/g, ' ');
     var params = {
       Bucket: process.env.S3_BUCKET,
       Key: urlWithoutQuery.replace(/^\//,'')
@@ -57,7 +57,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
 
   // serve the cover images without need of login (since it is used on the sharing page)
   app.get('/epub_content/**', function (req, res, next) {
-    var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'');
+    var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'').replace(/%20/g, ' ');
     var urlPieces = urlWithoutQuery.split('/');
     var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
 
@@ -94,7 +94,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
 
   // serve the static files
   app.get('*', ensureAuthenticated, function (req, res, next) {
-    var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'');
+    var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'').replace(/%20/g, ' ');
     var urlPieces = urlWithoutQuery.split('/');
     var bookId = parseInt((urlPieces[2] || '0').replace(/^book_([0-9]+).*$/, '$1'));
 
