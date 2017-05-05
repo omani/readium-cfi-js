@@ -115,7 +115,7 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
             .replace(/{{sharer_remove_class}}/g, req.query.editing ? '' : 'hidden');
 
           if(req.isAuthenticated()) {
-            if(!req.user.isAdmin && req.user.bookIds.indexOf(req.params.bookId) == -1) {
+            if(req.user.bookIds.indexOf(req.params.bookId) == -1) {
               sharePage = sharePage
                 .replace(/{{read_class}}/g, 'hidden');
             } else {
@@ -358,8 +358,9 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
   app.get('/epub_content/epub_library.json', ensureAuthenticated, function (req, res, next) {
 
     // look those books up in the database and form the library
+console.log(req.user.bookIds);
     log('Lookup library');
-    connection.query('SELECT * FROM `book` WHERE rootUrl IS NOT NULL' + (req.user.isAdmin ? '' : ' AND id IN(?)'),
+    connection.query('SELECT * FROM `book` WHERE rootUrl IS NOT NULL AND id IN(?)',
       [req.user.bookIds.concat([-1])],
       function (err, rows, fields) {
         if (err) return next(err);

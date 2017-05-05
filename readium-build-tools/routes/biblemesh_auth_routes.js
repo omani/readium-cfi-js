@@ -1,4 +1,4 @@
-module.exports = function (app, passport, authFuncs, ensureAuthenticated, log) {
+module.exports = function (app, passport, authFuncs, connection, ensureAuthenticated, log) {
 
   var fs = require('fs');
 

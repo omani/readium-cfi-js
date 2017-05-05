@@ -54,6 +54,29 @@ var redisOptions = {
 
 ////////////// SETUP PASSPORT //////////////
 
+var filterBookIdsByIDPs = function(bookIds, idpCodes, isAdmin, next, callback) {
+
+  // Admins not counted as admins if they are logged into multiple IDPs
+  isAdmin = isAdmin && idpCodes.length==1;
+
+  // filter bookIds by the book-idp (books are accessible to user only if the book is associated with login IDP)
+  connection.query('SELECT book_id FROM `book-idp` WHERE idp_code IN(?)' + (isAdmin ? '' : ' AND book_id IN(?)'),
+    [idpCodes.concat(['']), bookIds.concat([-1])],
+    function (err, rows, fields) {
+      if (err) return next(err);
+
+      var idpBookIds = rows.map(function(row) { return parseInt(row.book_id); });
+      log(['Filter book ids by idp', idpBookIds]);
+      
+      callback(
+        isAdmin
+          ? idpBookIds
+          : bookIds.filter(function(bId) { return idpBookIds.indexOf(bId) != -1; })
+      );
+    }
+  );
+}
+
 passport.serializeUser(function(user, done) {
   done(null, user);
 });
@@ -69,7 +92,7 @@ var strategyCallback = function(idp, profile, done) {
 
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
   var idpUserId = profile['idpUserId'];
-  var isAdmin = !!profile['isAdmin'];
+  var isAdmin = !!profile['isAdmin'] || process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1;
   var givenName = profile['urn:oid:2.5.4.42'] || '';
   var sn = profile['urn:oid:2.5.4.4'] || '';
   var bookIds = ( profile['bookIds'] ? profile['bookIds'].split(' ') : [] )
@@ -80,63 +103,66 @@ var strategyCallback = function(idp, profile, done) {
     done('Bad login.');
   }
 
-  var completeLogin = function(userId) {
-    log('Login successful', 2);
-    done(null, Object.assign(profile, {
-      id: userId,
-      email: mail,
-      firstname: givenName,
-      lastname: sn,
-      bookIds: bookIds,
-      isAdmin: isAdmin,
-      // isAdmin: process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1,
-      idpCode: idp.code,
-      idpName: idp.name,
-      idpLogoSrc: idp.logoSrc,
-      idpSmallLogoSrc: idp.smallLogoSrc || idp.logoSrc,
-      idpLang: idp.language || 'en'
-    }));
-  }
+  filterBookIdsByIDPs(bookIds, [idp.code], isAdmin, done, function(filteredBookIds) {
 
-  connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_code=?',
-    [idpUserId, idp.code],
-    function (err, rows) {
-      if (err) return done(err);
+    bookIds = filteredBookIds;
 
-      var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
-
-      if(rows.length == 0) {
-        log('Creating new user row');
-        connection.query('INSERT into `user` SET ?',
-          {
-            user_id_from_idp: idpUserId,
-            idp_code: idp.code,
-            email: mail,
-            last_login_at: currentMySQLDatetime
-          },
-          function (err2, results) {
-            if (err2) return done(err2);
-
-            log('User row created successfully');
-            completeLogin(results.insertId);
-          }
-        );
-
-      } else {
-        log('Updating new user row');
-        connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_code=?',
-          [currentMySQLDatetime, mail, idpUserId, idp.code],
-          function (err2, results) {
-            if (err2) return done(err2);
-
-            log('User row updated successfully');
-            completeLogin(rows[0].id);
-          }
-        );
-      }
-
+    var completeLogin = function(userId) {
+      log('Login successful', 2);
+      done(null, Object.assign(profile, {
+        id: userId,
+        email: mail,
+        firstname: givenName,
+        lastname: sn,
+        bookIds: bookIds,
+        isAdmin: isAdmin,  // If I change to multiple IDP logins at once, then ensure admins can only be logged into one
+        idpCode: idp.code,
+        idpName: idp.name,
+        idpLogoSrc: idp.logoSrc,
+        idpSmallLogoSrc: idp.smallLogoSrc || idp.logoSrc,
+        idpLang: idp.language || 'en'
+      }));
     }
-  )
+
+    connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_code=?',
+      [idpUserId, idp.code],
+      function (err, rows) {
+        if (err) return done(err);
+
+        var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
+
+        if(rows.length == 0) {
+          log('Creating new user row');
+          connection.query('INSERT into `user` SET ?',
+            {
+              user_id_from_idp: idpUserId,
+              idp_code: idp.code,
+              email: mail,
+              last_login_at: currentMySQLDatetime
+            },
+            function (err2, results) {
+              if (err2) return done(err2);
+
+              log('User row created successfully');
+              completeLogin(results.insertId);
+            }
+          );
+
+        } else {
+          log('Updating new user row');
+          connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_code=?',
+            [currentMySQLDatetime, mail, idpUserId, idp.code],
+            function (err2, results) {
+              if (err2) return done(err2);
+
+              log('User row updated successfully');
+              completeLogin(rows[0].id);
+            }
+          );
+        }
+      }
+    )
+  });
 };
 
 // setup SAML strategies for IDPs
@@ -199,20 +225,22 @@ function ensureAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
   } else if (process.env.SKIP_AUTH) {
-    req.user = {
-      id: 1,
-      email: 'place@holder.com',
-      firstname: 'Jim',
-      lastname: 'Smith',
-      bookIds: [],  // ex. [1,2,3]
-      isAdmin: true,
-      idpCode: 'bm',
-      idpName: 'BibleMesh',
-      idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png',
-      idpSmallLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo-small.png',
-      idpLang: 'en'
-    }
-    return next();
+    filterBookIdsByIDPs([], ['bm'], true, next, function(filteredBookIds) {
+      req.user = {
+        id: 1,
+        email: 'place@holder.com',
+        firstname: 'Jim',
+        lastname: 'Smith',
+        bookIds: filteredBookIds,
+        isAdmin: true,
+        idpCode: 'bm',
+        idpName: 'BibleMesh',
+        idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png',
+        idpSmallLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo-small.png',
+        idpLang: 'en'
+      }
+      return next();
+    });
   } else if(
     req.method == 'GET'
     && (

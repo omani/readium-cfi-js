@@ -4,7 +4,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
   var fs = require('fs');
   var mime = require('mime');
 
-  require('./biblemesh_auth_routes')(app, passport, authFuncs, ensureAuthenticated, log);
+  require('./biblemesh_auth_routes')(app, passport, authFuncs, connection, ensureAuthenticated, log);
   require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticated, log);
   require('./biblemesh_user_routes')(app, connection, ensureAuthenticated, log);
 
@@ -101,7 +101,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
     // check that they have access if this is a book
     if(urlPieces[1] == 'epub_content') {
 
-      if(!req.user.isAdmin && req.user.bookIds.indexOf(bookId) == -1) {
+      if(req.user.bookIds.indexOf(bookId) == -1) {
         log(['They do not have access to this book', bookId], 2);
         res.status(403).send({ error: 'Forbidden' });
       } else {

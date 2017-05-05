@@ -76,10 +76,26 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
       return;
     }
 
-    deleteBook(req.params.bookId, next, function() {
-      log('Delete successful', 2);
-      res.send({ success: true });
-    });
+    connection.query('DELETE FROM `book-idp` WHERE book_id=? AND idp_code=?',
+      [req.params.bookId, req.user.idpCode],
+      function (err, result) {
+        if (err) return next(err);
+
+        // if book was owned solely by a demo tenant, clear out the book and user data
+
+        // deleteBook(req.params.bookId, next, function() {
+        //   log('Delete successful', 2);
+        //   res.send({ success: true });
+        // });
+
+        req.user.bookIds = req.user.bookIds.filter(function(bId) { return bId != parseInt(req.params.bookId); });
+
+        log('Delete (idp disassociation) successful', 2);
+        res.send({ success: true });
+
+      }
+    );
+
   })
 
   // import
@@ -112,6 +128,8 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
             return next(err);
           }
           
+          req.user.bookIds.push(parseInt(bookRow.id));
+  
           log('Import successful', 2);
           res.send({
             success: true,
