@@ -69,6 +69,7 @@ var strategyCallback = function(idp, profile, done) {
 
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
   var idpUserId = profile['idpUserId'];
+  var isAdmin = !!profile['isAdmin'];
   var givenName = profile['urn:oid:2.5.4.42'] || '';
   var sn = profile['urn:oid:2.5.4.4'] || '';
   var bookIds = ( profile['bookIds'] ? profile['bookIds'].split(' ') : [] )
@@ -87,7 +88,8 @@ var strategyCallback = function(idp, profile, done) {
       firstname: givenName,
       lastname: sn,
       bookIds: bookIds,
-      isAdmin: process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1,
+      isAdmin: isAdmin,
+      // isAdmin: process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1,
       idpCode: idp.code,
       idpName: idp.name,
       idpLogoSrc: idp.logoSrc,
