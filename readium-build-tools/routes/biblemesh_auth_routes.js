@@ -4,15 +4,22 @@ module.exports = function (app, passport, authFuncs, ensureAuthenticated, log) {
 
   app.get('/login',
     function (req, res) {
-      // In the future, this will send a page to the user where they can choose the IDP to login with
-
-      // IMPORTANT: When we move to multiple IDPs, I should probably add a `uploaded_by` field to the `book` table
-      // to only allow admins from that same IDP to delete that book. OR, have a different environment variable
-      // for super admins who can delete books.
-
       log('Redirect to IDP login');
-      res.redirect('/login/bm');
+      connection.query('SELECT code FROM `idp` WHERE domain=?',
+        [req.headers.host],
+        function (err, rows) {
+          if (err) return next(err);
 
+          var row = rows[0];
+
+          if(!row) {
+            res.status(401).send('Tenant not found.');
+          } else {
+            res.redirect('/login/' + row.code);
+          }
+
+        }
+      );
     }
   );
 
