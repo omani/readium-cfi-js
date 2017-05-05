@@ -195,98 +195,115 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
           bookRow.id = results.insertId;
           bookRow.rootUrl = 'epub_content/book_' + bookRow.id;
 
-          emptyS3Folder({
-            Bucket: process.env.S3_BUCKET,
-            Prefix: 'epub_content/book_' + bookRow.id + '/'
-          }, function(err, data) {
-            if (err) {
-              // clean up
-              deleteFolderRecursive(tmpDir);
-              return next(err);
-            }
-          
-            deleteFolderRecursive(toUploadDir);
-
-            fs.mkdir(toUploadDir, function(err) {
-              
-              try {
-                var zip = new admzip(file.path);
-                zip.extractAllTo(toUploadDir);
-
-                fs.rename(file.path, toUploadDir + '/book.epub', function(err) {
-
-                  getEPUBFilePaths(toUploadDir);
-                  epubFilePaths.forEach(function(path) {
-                    // TODO: Setup search
-                    // TODO: make thumbnail smaller
-                    // TODO: make fonts public
-
-                    if(path == toUploadDir + '/META-INF/container.xml') {
-                      var contents = fs.readFileSync(path, "utf-8");
-                      var matches = contents.match(/["']([^"']+\.opf)["']/);
-                      if(matches) {
-                        var opfContents = fs.readFileSync(toUploadDir + '/' + matches[1], "utf-8");
-
-                        ['title','creator','publisher'].forEach(function(dcTag) {
-                          var dcTagRegEx = new RegExp('<dc:' + dcTag + '[^>]*>([^<]+)</dc:' + dcTag + '>');
-                          var opfPathMatches1 = opfContents.match(dcTagRegEx);
-                          if(opfPathMatches1) {
-                            bookRow[dcTag] = entities.decode(opfPathMatches1[1]);
-                          }
-
-                        });
-
-                        var setCoverHref = function(attr, attrVal) {
-                          if(bookRow.coverHref) return;
-                          var coverItemRegEx = new RegExp('<item ([^>]*)' + attr + '=["\']' + attrVal + '["\']([^>]*)\/>');
-                          var coverItemMatches = opfContents.match(coverItemRegEx);
-                          var coverItem = coverItemMatches && coverItemMatches[1] + coverItemMatches[2];
-                          if(coverItem) {
-                            var coverItemHrefMatches = coverItem.match(/href=["']([^"']+)["']/);
-                            if(coverItemHrefMatches) {
-                              bookRow.coverHref = 'epub_content/book_' + bookRow.id + '/' + matches[1].replace(/[^\/]*$/, '') + coverItemHrefMatches[1];
-                            }
-                          }
-                        }
-
-                        var opfPathMatches2 = opfContents.match(/<meta ([^>]*)name=["']cover["']([^>]*)\/>/);
-                        var metaCover = opfPathMatches2 && opfPathMatches2[1] + opfPathMatches2[2];
-                        if(metaCover) {
-                          var metaCoverMatches = metaCover.match(/content=["']([^"']+)["']/);
-                          if(metaCoverMatches) {
-                            setCoverHref('id', metaCoverMatches[1]);
-                          }
-                        }
-                        setCoverHref('properties', 'cover-image');
-                      }
-                    }
-
-                    putEPUBFile(path.replace(toUploadDir + '/', ''), fs.createReadStream(path));
-                  });
-
-                  if(bookRow.coverHref) {
-                    var baseCoverHref = bookRow.coverHref.replace('epub_content/book_' + bookRow.id, '');
-                    sharp(toUploadDir + baseCoverHref)
-                      .resize(75)
-                      .png()
-                      .toBuffer()
-                      .then(function(imgData) {
-                        putEPUBFile('cover_thumbnail_created_on_import.png', imgData);
-                      });
-                  }
-                });
-
-
-              } catch (e) {
-                log(['Import book exception', e], 3);
+          connection.query('INSERT INTO `book-idp` SET ?',
+            {
+              book_id: bookRow.id,
+              idp_code: req.user.idpCode
+            },
+            function (err, results) {
+              if (err) {
+                // clean up
                 deleteFolderRecursive(tmpDir);
-                deleteBook(bookRow.id, next, function() {
-                  res.status(400).send({errorType: "biblemesh_unable_to_process"});
+                connection.query('DELETE FROM `book` WHERE id=?', bookRow.id, function (err2, result) {
+                  if (err2) return next(err2);
+                  return next(err);
                 });
               }
-            });
-          });
-        })
+
+              emptyS3Folder({
+                Bucket: process.env.S3_BUCKET,
+                Prefix: 'epub_content/book_' + bookRow.id + '/'
+              }, function(err, data) {
+                if (err) {
+                  // clean up
+                  deleteFolderRecursive(tmpDir);
+                  return next(err);
+                }
+              
+                deleteFolderRecursive(toUploadDir);
+
+                fs.mkdir(toUploadDir, function(err) {
+                  
+                  try {
+                    var zip = new admzip(file.path);
+                    zip.extractAllTo(toUploadDir);
+
+                    fs.rename(file.path, toUploadDir + '/book.epub', function(err) {
+
+                      getEPUBFilePaths(toUploadDir);
+                      epubFilePaths.forEach(function(path) {
+                        // TODO: Setup search
+                        // TODO: make thumbnail smaller
+                        // TODO: make fonts public
+
+                        if(path == toUploadDir + '/META-INF/container.xml') {
+                          var contents = fs.readFileSync(path, "utf-8");
+                          var matches = contents.match(/["']([^"']+\.opf)["']/);
+                          if(matches) {
+                            var opfContents = fs.readFileSync(toUploadDir + '/' + matches[1], "utf-8");
+
+                            ['title','creator','publisher'].forEach(function(dcTag) {
+                              var dcTagRegEx = new RegExp('<dc:' + dcTag + '[^>]*>([^<]+)</dc:' + dcTag + '>');
+                              var opfPathMatches1 = opfContents.match(dcTagRegEx);
+                              if(opfPathMatches1) {
+                                bookRow[dcTag] = entities.decode(opfPathMatches1[1]);
+                              }
+
+                            });
+
+                            var setCoverHref = function(attr, attrVal) {
+                              if(bookRow.coverHref) return;
+                              var coverItemRegEx = new RegExp('<item ([^>]*)' + attr + '=["\']' + attrVal + '["\']([^>]*)\/>');
+                              var coverItemMatches = opfContents.match(coverItemRegEx);
+                              var coverItem = coverItemMatches && coverItemMatches[1] + coverItemMatches[2];
+                              if(coverItem) {
+                                var coverItemHrefMatches = coverItem.match(/href=["']([^"']+)["']/);
+                                if(coverItemHrefMatches) {
+                                  bookRow.coverHref = 'epub_content/book_' + bookRow.id + '/' + matches[1].replace(/[^\/]*$/, '') + coverItemHrefMatches[1];
+                                }
+                              }
+                            }
+
+                            var opfPathMatches2 = opfContents.match(/<meta ([^>]*)name=["']cover["']([^>]*)\/>/);
+                            var metaCover = opfPathMatches2 && opfPathMatches2[1] + opfPathMatches2[2];
+                            if(metaCover) {
+                              var metaCoverMatches = metaCover.match(/content=["']([^"']+)["']/);
+                              if(metaCoverMatches) {
+                                setCoverHref('id', metaCoverMatches[1]);
+                              }
+                            }
+                            setCoverHref('properties', 'cover-image');
+                          }
+                        }
+
+                        putEPUBFile(path.replace(toUploadDir + '/', ''), fs.createReadStream(path));
+                      });
+
+                      if(bookRow.coverHref) {
+                        var baseCoverHref = bookRow.coverHref.replace('epub_content/book_' + bookRow.id, '');
+                        sharp(toUploadDir + baseCoverHref)
+                          .resize(75)
+                          .png()
+                          .toBuffer()
+                          .then(function(imgData) {
+                            putEPUBFile('cover_thumbnail_created_on_import.png', imgData);
+                          });
+                      }
+                    });
+
+
+                  } catch (e) {
+                    log(['Import book exception', e], 3);
+                    deleteFolderRecursive(tmpDir);
+                    deleteBook(bookRow.id, next, function() {
+                      res.status(400).send({errorType: "biblemesh_unable_to_process"});
+                    });
+                  }
+                });
+              });
+            }
+          );
+        });
       });
 
       form.parse(req);
