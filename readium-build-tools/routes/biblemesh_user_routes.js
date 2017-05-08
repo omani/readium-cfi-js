@@ -84,7 +84,7 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
         function (err, rows, fields) {
           if (err) return next(err);
 
-          var baseUrl = process.env.APP_URL || "https://read.biblemesh.com";
+          var baseUrl = req.protocol + '://' + req.headers.host;
           var urlWithEditing = baseUrl + req.originalUrl.replace(/([\?&])editing=1&?/, '$1');
           var abridgedNote = req.query.note || ' ';
           if(abridgedNote.length > 116) {
@@ -358,7 +358,6 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
   app.get('/epub_content/epub_library.json', ensureAuthenticated, function (req, res, next) {
 
     // look those books up in the database and form the library
-console.log(req.user.bookIds);
     log('Lookup library');
     connection.query('SELECT * FROM `book` WHERE rootUrl IS NOT NULL AND id IN(?)',
       [req.user.bookIds.concat([-1])],

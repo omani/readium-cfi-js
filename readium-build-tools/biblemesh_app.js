@@ -21,7 +21,6 @@ var biblemesh_util = require('./routes/biblemesh_util');
 var port = parseInt(process.env.PORT, 10) || process.env.PORT || 8080;
 app.set('port', port);
 var server = http.createServer(app);
-var appURL = process.env.APP_URL || "https://read.biblemesh.com";
 var log = function(msgs, importanceLevel) {
   var logLevel = parseInt(process.env.LOGLEVEL) || 3;   // 1=verbose, 2=important, 3=errors only
   importanceLevel = importanceLevel || 1;
@@ -54,14 +53,14 @@ var redisOptions = {
 
 ////////////// SETUP PASSPORT //////////////
 
-var filterBookIdsByIDPs = function(bookIds, idpCodes, isAdmin, next, callback) {
+var filterBookIdsByIDPs = function(bookIds, idpIds, isAdmin, next, callback) {
 
   // Admins not counted as admins if they are logged into multiple IDPs
-  isAdmin = isAdmin && idpCodes.length==1;
+  isAdmin = isAdmin && idpIds.length==1;
 
   // filter bookIds by the book-idp (books are accessible to user only if the book is associated with login IDP)
-  connection.query('SELECT book_id FROM `book-idp` WHERE idp_code IN(?)' + (isAdmin ? '' : ' AND book_id IN(?)'),
-    [idpCodes.concat(['']), bookIds.concat([-1])],
+  connection.query('SELECT book_id FROM `book-idp` WHERE idp_id IN(?)' + (isAdmin ? '' : ' AND book_id IN(?)'),
+    [idpIds.concat([-1]), bookIds.concat([-1])],
     function (err, rows, fields) {
       if (err) return next(err);
 
@@ -103,7 +102,7 @@ var strategyCallback = function(idp, profile, done) {
     done('Bad login.');
   }
 
-  filterBookIdsByIDPs(bookIds, [idp.code], isAdmin, done, function(filteredBookIds) {
+  filterBookIdsByIDPs(bookIds, [idp.id], isAdmin, done, function(filteredBookIds) {
 
     bookIds = filteredBookIds;
 
@@ -116,7 +115,7 @@ var strategyCallback = function(idp, profile, done) {
         lastname: sn,
         bookIds: bookIds,
         isAdmin: isAdmin,  // If I change to multiple IDP logins at once, then ensure admins can only be logged into one
-        idpCode: idp.code,
+        idpId: parseInt(idp.id),
         idpName: idp.name,
         idpLogoSrc: idp.logoSrc,
         idpSmallLogoSrc: idp.smallLogoSrc || idp.logoSrc,
@@ -124,8 +123,8 @@ var strategyCallback = function(idp, profile, done) {
       }));
     }
 
-    connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_code=?',
-      [idpUserId, idp.code],
+    connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_id=?',
+      [idpUserId, idp.id],
       function (err, rows) {
         if (err) return done(err);
 
@@ -136,7 +135,7 @@ var strategyCallback = function(idp, profile, done) {
           connection.query('INSERT into `user` SET ?',
             {
               user_id_from_idp: idpUserId,
-              idp_code: idp.code,
+              idp_id: idp.id,
               email: mail,
               last_login_at: currentMySQLDatetime
             },
@@ -150,8 +149,8 @@ var strategyCallback = function(idp, profile, done) {
 
         } else {
           log('Updating new user row');
-          connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_code=?',
-            [currentMySQLDatetime, mail, idpUserId, idp.code],
+          connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_id=?',
+            [currentMySQLDatetime, mail, idpUserId, idp.id],
             function (err2, results) {
               if (err2) return done(err2);
 
@@ -174,16 +173,17 @@ connection.query('SELECT * FROM `idp`',
     }
 
     rows.forEach(function(row) {
+      var baseUrl = 'https://' + row.domain
       var samlStrategy = new saml.Strategy(
         {
-          issuer: appURL + "/shibboleth",
+          issuer: baseUrl + "/shibboleth",
           identifierFormat: null,
           validateInResponseTo: false,
           disableRequestedAuthnContext: true,
-          callbackUrl: appURL + "/login/" + row.code + "/callback",
+          callbackUrl: baseUrl + "/login/" + row.id + "/callback",
           entryPoint: row.entryPoint,
           logoutUrl: row.logoutUrl,
-          logoutCallbackUrl: appURL + "/logout/callback",
+          logoutCallbackUrl: baseUrl + "/logout/callback",
           cert: row.idpcert,
           decryptionPvk: row.spkey,
           privateCert: row.spkey
@@ -193,9 +193,9 @@ connection.query('SELECT * FROM `idp`',
         }
       );
 
-      passport.use(row.code, samlStrategy);
+      passport.use(row.id, samlStrategy);
 
-      authFuncs[row.code] = {
+      authFuncs[row.id] = {
         getMetaData: function() {
           return samlStrategy.generateServiceProviderMetadata(row.spcert);
         },
@@ -225,7 +225,7 @@ function ensureAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
   } else if (process.env.SKIP_AUTH) {
-    filterBookIdsByIDPs([], ['bm'], true, next, function(filteredBookIds) {
+    filterBookIdsByIDPs([], [1], true, next, function(filteredBookIds) {
       req.user = {
         id: 1,
         email: 'place@holder.com',
@@ -233,7 +233,7 @@ function ensureAuthenticated(req, res, next) {
         lastname: 'Smith',
         bookIds: filteredBookIds,
         isAdmin: true,
-        idpCode: 'bm',
+        idpId: 1,
         idpName: 'BibleMesh',
         idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png',
         idpSmallLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo-small.png',
@@ -243,12 +243,12 @@ function ensureAuthenticated(req, res, next) {
     });
   } else if(
     req.method == 'GET'
-    && (
+    && ((
       req.headers['app-request']
       && req.originalUrl.match(/^\/usersetup\.json/)
     ) || (
       req.originalUrl.match(/^\/(book\/[^\/]*|\?.*)?$/)
-    )
+    ))
   ) {  // library or book call
     if(req.query.widget) {
       return res.send(`
@@ -260,14 +260,115 @@ function ensureAuthenticated(req, res, next) {
           }, '*');
         </script>
       `);
+    
     }
-    log('Redirecting to authenticate', 2);
-    req.session.loginRedirect = req.url;
-    if(req.headers['app-request']) {
-      req.session.cookie.maxAge = parseInt(process.env.APP_SESSION_MAXAGE);
-      log(['Max age to set on cookie', req.session.cookie.maxAge]);
-    }
-    return res.redirect('/login');
+    
+    log('Checking if IDP requires authentication');
+    connection.query('SELECT * FROM `idp` WHERE domain=?',
+      [req.headers.host],
+      function (err, rows) {
+        if (err) return next(err);
+        var row = rows[0];
+
+        if(!row) {
+          // the IDP does not exist. check if they are creating a demo
+          var newDemoUrlRegExp = new RegExp('^demo--([a-zA-Z0-9\\-]+)\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
+          var newDemoUrlMatches = req.headers.host.match(newDemoUrlRegExp);
+
+          if(newDemoUrlMatches) {
+            // setup a new demo IDP
+            log('Creating new demo idp', 2);
+
+            var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
+            var expiresMySQLDatetime = biblemesh_util.timestampToMySQLDatetime(
+              biblemesh_util.getUTCTimeStamp() + (60 * 60 * Math.min(parseInt(req.query.demo_hours, 10) || 24, 336))
+            );
+            
+            // insert new idp row
+            log('Inserting new demo idp row');
+            connection.query('INSERT into `idp` SET ?',
+              {
+                name: newDemoUrlMatches[1].replace(/--[0-9]+$/, ''),
+                domain: newDemoUrlMatches[0],
+                created_at: currentMySQLDatetime,
+                demo_expires_at: expiresMySQLDatetime
+              },
+              function (err2, results2) {
+                if (err2) return next(err2);
+                log('Demo idp row inserted successfully');
+
+                // give access to all the books that the demo account has
+                log('Lookup base demo idp book_ids');
+                connection.query('SELECT `book-idp`.book_id FROM `book-idp` LEFT JOIN `idp` ON (`idp`.id=`book-idp`.idp_id) WHERE idp.domain=?',
+                  ['demo.' + process.env.APP_URL],
+                  function (err3, rows3, fields3) {
+                    if (err3) return next(err3);
+
+                    var bookInserts = ['SELECT 1'];  // dummy query, in case there are no books to insert
+                    rows3.forEach(function(row3) {
+                      var bookId = parseInt(row3.book_id, 10);
+                      if(bookId) {
+                        bookInserts.push('INSERT into `book-idp` SET book_id="' + bookId + '", idp_id="' + results2.insertId + '"');
+                      }
+                    });
+                    
+                    log('Inserting book-idp rows for new demo');
+                    connection.query(bookInserts.join('; '),
+                      function (err4, results4) {
+                        if (err4) return next(err4);
+                        log('Inserted book-idp rows successfully');
+
+                        log('Reloading new demo url now that idp created');
+                        res.redirect('/');
+                      }
+                    );
+                  }
+                );  
+              }
+            );
+
+          } else {
+            log('Tenant not found: ' + req.headers.host, 2);
+            res.status(401).send('Tenant not found.');
+
+          }
+        } else if(!row.entryPoint) {
+          var defDemoUrlRegExp = new RegExp('^demo\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
+
+          // the IDP does not require authentication
+          log('Logging in without authentication', 2);
+          filterBookIdsByIDPs([], [row.id], true, next, function(filteredBookIds) {
+            req.login({
+              id: 1,
+              email: 'demo@toadreader.com',
+              firstname: 'Demo',
+              lastname: 'Account',
+              bookIds: filteredBookIds,
+              isAdmin: !defDemoUrlRegExp.test(req.headers.host),
+              idpId: parseInt(row.id),
+              idpName: row.name,
+              idpLogoSrc: row.logoSrc,
+              idpSmallLogoSrc: row.smallLogoSrc || row.logoSrc,
+              idpLang: row.language || 'en'
+            }, function(err) {
+              if (err) { return next(err); }
+              return next();
+            });            
+          });
+
+        } else {
+          // the IDP does require authentication
+          log('Redirecting to authenticate', 2);
+          req.session.loginRedirect = req.url;
+          if(req.headers['app-request']) {
+            req.session.cookie.maxAge = parseInt(process.env.APP_SESSION_MAXAGE);
+            log(['Max age to set on cookie', req.session.cookie.maxAge]);
+          }
+          res.redirect('/login/' + row.id);
+        }
+      }
+    );
+
   } else {
     return res.status(403).send({ error: 'Please login' });
   }
@@ -298,7 +399,7 @@ app.use(passport.session());
 app.use('*', function(req, res, next) {  
   if(!req.secure && req.headers['x-forwarded-proto'] !== 'https' && process.env.REQUIRE_HTTPS) {
     log('Go to HTTPS');
-    var secureUrl = "https://" + req.headers['host'] + req.url; 
+    var secureUrl = "https://" + req.headers.host + req.url; 
     res.redirect(secureUrl);
   } else {
     next();

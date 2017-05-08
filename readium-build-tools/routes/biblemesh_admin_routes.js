@@ -76,8 +76,8 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
       return;
     }
 
-    connection.query('DELETE FROM `book-idp` WHERE book_id=? AND idp_code=?',
-      [req.params.bookId, req.user.idpCode],
+    connection.query('DELETE FROM `book-idp` WHERE book_id=? AND idp_id=?',
+      [req.params.bookId, req.user.idpId],
       function (err, result) {
         if (err) return next(err);
 
@@ -216,7 +216,7 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
           connection.query('INSERT INTO `book-idp` SET ?',
             {
               book_id: bookRow.id,
-              idp_code: req.user.idpCode
+              idp_id: req.user.idpId
             },
             function (err, results) {
               if (err) {

@@ -2,41 +2,20 @@ module.exports = function (app, passport, authFuncs, connection, ensureAuthentic
 
   var fs = require('fs');
 
-  app.get('/login',
-    function (req, res) {
-      log('Redirect to IDP login');
-      connection.query('SELECT code FROM `idp` WHERE domain=?',
-        [req.headers.host],
-        function (err, rows) {
-          if (err) return next(err);
-
-          var row = rows[0];
-
-          if(!row) {
-            res.status(401).send('Tenant not found.');
-          } else {
-            res.redirect('/login/' + row.code);
-          }
-
-        }
-      );
-    }
-  );
-
-  app.get('/login/:idpCode',
+  app.get('/login/:idpId',
     function(req, res, next) {
       log('Authenticate user', 2);
-      passport.authenticate(req.params.idpCode, { failureRedirect: '/login/fail' })(req, res, next);
+      passport.authenticate(req.params.idpId, { failureRedirect: '/login/fail' })(req, res, next);
     },
     function (req, res) {
       res.redirect('/');
     }
   );
 
-  app.post('/login/:idpCode/callback',
+  app.post('/login/:idpId/callback',
     function(req, res, next) {
       log('Authenticate user (callback)', 2);
-      passport.authenticate(req.params.idpCode, { failureRedirect: '/login/fail' })(req, res, next);
+      passport.authenticate(req.params.idpId, { failureRedirect: '/login/fail' })(req, res, next);
     },
     function(req, res) {
       var loginRedirect = req.session.loginRedirect || '/';
@@ -56,11 +35,11 @@ module.exports = function (app, passport, authFuncs, connection, ensureAuthentic
   app.get('/logout',
     ensureAuthenticated,
     function (req, res, next) {
-      authFuncs[req.user.idpCode].logout(req, res, next);
+      authFuncs[req.user.idpId].logout(req, res, next);
     }
   );
 
-  app.all('/logout/callback',
+  app.all(['/logout/callback', '/login'],
     function (req, res) {
       log('Logout callback (will delete cookie)', 2);
       req.logout();
@@ -72,12 +51,12 @@ module.exports = function (app, passport, authFuncs, connection, ensureAuthentic
     }
   );
 
-  app.get('/Shibboleth.sso/:idpCode/Metadata', 
+  app.get('/Shibboleth.sso/:idpId/Metadata', 
     function(req, res) {
       log('Metadata request');
       res.type('application/xml');
       res.status(200).send(
-        authFuncs[req.params.idpCode].getMetaData()
+        authFuncs[req.params.idpId].getMetaData()
       );
     }
   );
