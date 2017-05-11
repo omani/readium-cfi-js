@@ -5,7 +5,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
   var mime = require('mime');
   var biblemesh_util = require('./biblemesh_util');
 
-  function ensureAuthenticatedAndCheckIDP(req, res, next, redirectOnExpire) {
+  function goEnsureAuthenticatedAndCheckIDP(req, res, next, redirectOnExpire) {
     if (req.isAuthenticated() && req.user.idpNoAuth) {
       var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
 
@@ -32,13 +32,17 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
     }
   }
 
+  function ensureAuthenticatedAndCheckIDP(req, res, next) {
+    return goEnsureAuthenticatedAndCheckIDP(req, res, next, false);
+  }
+
   function ensureAuthenticatedAndCheckIDPWithRedirect(req, res, next) {
-    return ensureAuthenticatedAndCheckIDP(req, res, next, true);
+    return goEnsureAuthenticatedAndCheckIDP(req, res, next, true);
   }
 
   require('./biblemesh_auth_routes')(app, passport, authFuncs, connection, ensureAuthenticated, log);
   require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticatedAndCheckIDP, log);
-  require('./biblemesh_user_routes')(app, connection, ensureAuthenticatedAndCheckIDPWithRedirect, log);
+  require('./biblemesh_user_routes')(app, connection, ensureAuthenticatedAndCheckIDP, ensureAuthenticatedAndCheckIDPWithRedirect, log);
 
   var getAssetFromS3 = function(req, res, next, notFoundCallback) {
     var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'').replace(/%20/g, ' ');

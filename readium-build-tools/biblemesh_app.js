@@ -291,7 +291,8 @@ function ensureAuthenticated(req, res, next) {
             var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
             var expiresInHours = Math.min(parseInt(req.query.demo_hours, 10) || 24, 336);
             var expiresMySQLDatetime = biblemesh_util.timestampToMySQLDatetime(
-              biblemesh_util.getUTCTimeStamp() + (1000 * 60 * 60 * expiresInHours)
+              // an extra minute is included so that the full number of hours/days appears to the user
+              biblemesh_util.getUTCTimeStamp() + (1000 * 60 * 60 * expiresInHours + (1000 * 60))
             );
             
             // insert new idp row
