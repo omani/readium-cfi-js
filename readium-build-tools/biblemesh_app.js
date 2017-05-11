@@ -94,7 +94,10 @@ var strategyCallback = function(idp, profile, done) {
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
   var idpUserId = profile['idpUserId'];
   var idpId = parseInt(idp.id);
-  var isAdmin = !!profile['isAdmin'] || process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1;
+  var isAdmin =
+    !!profile['isAdmin'] ||
+    idp.adminUserEmails.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1 ||
+    process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1;
   var givenName = profile['urn:oid:2.5.4.42'] || '';
   var sn = profile['urn:oid:2.5.4.4'] || '';
   var bookIds = ( profile['bookIds'] ? profile['bookIds'].split(' ') : [] )
@@ -336,7 +339,7 @@ function ensureAuthenticated(req, res, next) {
 
           } else {
             log('Tenant not found: ' + req.headers.host, 2);
-            res.status(401).send('Tenant not found.');
+            return res.redirect('https://' + process.env.APP_URL + '?tenant_not_found=1');
 
           }
         } else {
