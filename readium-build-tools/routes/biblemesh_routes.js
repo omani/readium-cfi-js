@@ -4,11 +4,36 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
   var fs = require('fs');
   var mime = require('mime');
 
-  require('./biblemesh_auth_routes')(app, passport, authFuncs, connection, ensureAuthenticated, log);
-  require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticated, log);
-  require('./biblemesh_user_routes')(app, connection, ensureAuthenticated, log);
+  function ensureAuthenticatedAndCheckIDP(req, res, next) {
+    if (req.isAuthenticated() && req.user.idpNoAuth) {
+      var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
 
-  var getAssetFromS3 = function(req, res, next) {
+      log('Checking that temp demo IDP still exists');
+      connection.query('SELECT * FROM `idp` WHERE id=? AND (demo_expires_at IS NULL OR demo_expires_at>?)',
+        [req.user.idpId, currentMySQLDatetime],
+        function (err, rows) {
+          if (err) return next(err);
+
+          if(rows.length == 0) {
+            log(['IDP no longer exists', req.user.idpId], 2);
+            res.status(403).send({ errorType: "biblemesh_no_idp" });
+            return;
+          }
+
+          return ensureAuthenticated(req, res, next);
+        }
+      );
+    } else {
+      return ensureAuthenticated(req, res, next);
+    }
+  }
+
+
+  require('./biblemesh_auth_routes')(app, passport, authFuncs, connection, ensureAuthenticated, log);
+  require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticatedAndCheckIDP, log);
+  require('./biblemesh_user_routes')(app, connection, ensureAuthenticatedAndCheckIDP, log);
+
+  var getAssetFromS3 = function(req, res, next, notFoundCallback) {
     var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'').replace(/%20/g, ' ');
     var params = {
       Bucket: process.env.S3_BUCKET,
@@ -39,6 +64,8 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
           });
           res.status(304);
           res.send();
+        } else if(notFoundCallback) {
+          notFoundCallback();
         } else {
           log(['S3 file not found', params.Key], 2);
           res.status(404).send({ error: 'Not found' });
@@ -90,6 +117,49 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
           cacheControl: false
       });
     }
+  })
+
+  // serve the static files
+  app.get('/favicon.ico', function (req, res, next) {
+      // see if the tenant has a custom favicon, otherwise do the standard
+
+      var getFallbackIco = function() {
+        //this is the fallback
+        var staticFile = path.join(process.cwd(), (process.env.IS_DEV ? '/src' : '') + '/images/favicon.ico');
+
+        if(fs.existsSync(staticFile)) {
+          log(['Deliver static file', staticFile]);
+          res.sendFile(staticFile, {
+              dotfiles: "allow",
+              cacheControl: true
+          });
+        } else {
+          log(['File not found', staticFile], 2);
+          res.status(404).send({ error: 'Not found' });
+        }
+      };
+
+      var getIco = function(idpId) {
+        req.url = '/tenant_assets/favicon-' + idpId + '.ico';
+        getAssetFromS3(req, res, next, getFallbackIco);
+      }
+
+      if(req.isAuthenticated()) {
+        getIco(req.user.idpId);
+      } else {
+        connection.query('SELECT id FROM `idp` WHERE domain=?',
+          [req.headers.host],
+          function (err, rows) {
+            if (err) return next(err);
+            
+            if(rows.length > 0) {
+              getIco(parseInt(rows[0].id));
+            } else {
+              getFallbackIco();
+            }
+          }
+        );
+      }
   })
 
   // serve the static files

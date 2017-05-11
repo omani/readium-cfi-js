@@ -30,6 +30,8 @@ var log = function(msgs, importanceLevel) {
     console.log.apply(this, msgs);
   }
 }
+console.log(process.env);
+
 
 ////////////// SETUP STORAGE //////////////
 
@@ -60,7 +62,7 @@ var filterBookIdsByIDPs = function(bookIds, idpIds, isAdmin, next, callback) {
 
   // filter bookIds by the book-idp (books are accessible to user only if the book is associated with login IDP)
   connection.query('SELECT book_id FROM `book-idp` WHERE idp_id IN(?)' + (isAdmin ? '' : ' AND book_id IN(?)'),
-    [idpIds.concat([-1]), bookIds.concat([-1])],
+    [idpIds.concat([0]), bookIds.concat([0])],
     function (err, rows, fields) {
       if (err) return next(err);
 
@@ -91,6 +93,7 @@ var strategyCallback = function(idp, profile, done) {
 
   var mail = profile['urn:oid:0.9.2342.19200300.100.1.3'];
   var idpUserId = profile['idpUserId'];
+  var idpId = parseInt(idp.id);
   var isAdmin = !!profile['isAdmin'] || process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(mail.toLowerCase()) != -1;
   var givenName = profile['urn:oid:2.5.4.42'] || '';
   var sn = profile['urn:oid:2.5.4.4'] || '';
@@ -102,7 +105,7 @@ var strategyCallback = function(idp, profile, done) {
     done('Bad login.');
   }
 
-  filterBookIdsByIDPs(bookIds, [idp.id], isAdmin, done, function(filteredBookIds) {
+  filterBookIdsByIDPs(bookIds, [idpId], isAdmin, done, function(filteredBookIds) {
 
     bookIds = filteredBookIds;
 
@@ -115,16 +118,17 @@ var strategyCallback = function(idp, profile, done) {
         lastname: sn,
         bookIds: bookIds,
         isAdmin: isAdmin,  // If I change to multiple IDP logins at once, then ensure admins can only be logged into one
-        idpId: parseInt(idp.id),
+        idpId: idpId,
         idpName: idp.name,
-        idpLogoSrc: idp.logoSrc,
-        idpSmallLogoSrc: idp.smallLogoSrc || idp.logoSrc,
-        idpLang: idp.language || 'en'
+        idpUseReaderTxt: !!idp.useReaderTxt,
+        idpLang: idp.language || 'en',
+        idpNoAuth: false,
+        idpExpire: idp.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(idp.demo_expires_at)
       }));
     }
 
     connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_id=?',
-      [idpUserId, idp.id],
+      [idpUserId, idpId],
       function (err, rows) {
         if (err) return done(err);
 
@@ -135,7 +139,7 @@ var strategyCallback = function(idp, profile, done) {
           connection.query('INSERT into `user` SET ?',
             {
               user_id_from_idp: idpUserId,
-              idp_id: idp.id,
+              idp_id: idpId,
               email: mail,
               last_login_at: currentMySQLDatetime
             },
@@ -150,7 +154,7 @@ var strategyCallback = function(idp, profile, done) {
         } else {
           log('Updating new user row');
           connection.query('UPDATE `user` SET last_login_at=?, email=? WHERE user_id_from_idp=? AND idp_id=?',
-            [currentMySQLDatetime, mail, idpUserId, idp.id],
+            [currentMySQLDatetime, mail, idpUserId, idpId],
             function (err2, results) {
               if (err2) return done(err2);
 
@@ -225,19 +229,21 @@ function ensureAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
   } else if (process.env.SKIP_AUTH) {
-    filterBookIdsByIDPs([], [1], true, next, function(filteredBookIds) {
+    var fakeIdpId = 1;
+    filterBookIdsByIDPs([], [fakeIdpId], true, next, function(filteredBookIds) {
       req.user = {
-        id: 1,
+        id: fakeIdpId * -1,
         email: 'place@holder.com',
         firstname: 'Jim',
         lastname: 'Smith',
         bookIds: filteredBookIds,
         isAdmin: true,
-        idpId: 1,
-        idpName: 'BibleMesh',
-        idpLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo.png',
-        idpSmallLogoSrc: 'https://s3-us-west-2.amazonaws.com/biblemesh-static/biblemesh-logo-small.png',
-        idpLang: 'en'
+        idpId: fakeIdpId,
+        idpName: 'ToadReader',
+        idpUseReaderTxt: false,
+        idpLang: 'en',
+        idpNoAuth: true,
+        idpExpire: false
       }
       return next();
     });
@@ -275,13 +281,14 @@ function ensureAuthenticated(req, res, next) {
           var newDemoUrlRegExp = new RegExp('^demo--([a-zA-Z0-9\\-]+)\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
           var newDemoUrlMatches = req.headers.host.match(newDemoUrlRegExp);
 
-          if(newDemoUrlMatches) {
+          if(newDemoUrlMatches && req.query.create != undefined) {
             // setup a new demo IDP
             log('Creating new demo idp', 2);
 
             var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
+            var expiresInHours = Math.min(parseInt(req.query.demo_hours, 10) || 24, 336);
             var expiresMySQLDatetime = biblemesh_util.timestampToMySQLDatetime(
-              biblemesh_util.getUTCTimeStamp() + (60 * 60 * Math.min(parseInt(req.query.demo_hours, 10) || 24, 336))
+              biblemesh_util.getUTCTimeStamp() + (1000 * 60 * 60 * expiresInHours)
             );
             
             // insert new idp row
@@ -332,39 +339,48 @@ function ensureAuthenticated(req, res, next) {
             res.status(401).send('Tenant not found.');
 
           }
-        } else if(!row.entryPoint) {
-          var defDemoUrlRegExp = new RegExp('^demo\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
-
-          // the IDP does not require authentication
-          log('Logging in without authentication', 2);
-          filterBookIdsByIDPs([], [row.id], true, next, function(filteredBookIds) {
-            req.login({
-              id: 1,
-              email: 'demo@toadreader.com',
-              firstname: 'Demo',
-              lastname: 'Account',
-              bookIds: filteredBookIds,
-              isAdmin: !defDemoUrlRegExp.test(req.headers.host),
-              idpId: parseInt(row.id),
-              idpName: row.name,
-              idpLogoSrc: row.logoSrc,
-              idpSmallLogoSrc: row.smallLogoSrc || row.logoSrc,
-              idpLang: row.language || 'en'
-            }, function(err) {
-              if (err) { return next(err); }
-              return next();
-            });            
-          });
-
         } else {
-          // the IDP does require authentication
-          log('Redirecting to authenticate', 2);
-          req.session.loginRedirect = req.url;
-          if(req.headers['app-request']) {
-            req.session.cookie.maxAge = parseInt(process.env.APP_SESSION_MAXAGE);
-            log(['Max age to set on cookie', req.session.cookie.maxAge]);
+          var expiresAt = row.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(row.demo_expires_at);
+          if(expiresAt && expiresAt < biblemesh_util.getUTCTimeStamp()) {
+            log(['IDP no longer exists (#2)', row.id], 2);
+            return res.status(403).send({ errorType: "This temporary domain has expired." });
+
+          } else if(!row.entryPoint) {
+            var defDemoUrlRegExp = new RegExp('^demo\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
+            var idpId = parseInt(row.id);
+
+            // the IDP does not require authentication
+            log('Logging in without authentication', 2);
+            filterBookIdsByIDPs([], [idpId], true, next, function(filteredBookIds) {
+              req.login({
+                id: idpId * -1,
+                email: 'demo@toadreader.com',
+                firstname: 'Demo',
+                lastname: 'Account',
+                bookIds: filteredBookIds,
+                isAdmin: !defDemoUrlRegExp.test(req.headers.host),
+                idpId: idpId,
+                idpName: row.name,
+                idpUseReaderTxt: !!row.useReaderTxt,
+                idpLang: row.language || 'en',
+                idpNoAuth: true,
+                idpExpire: expiresAt
+              }, function(err) {
+                if (err) { return next(err); }
+                return next();
+              });            
+            });
+
+          } else {
+            // the IDP does require authentication
+            log('Redirecting to authenticate', 2);
+            req.session.loginRedirect = req.url;
+            if(req.headers['app-request']) {
+              req.session.cookie.maxAge = parseInt(process.env.APP_SESSION_MAXAGE) || 1209600000;
+              log(['Max age to set on cookie', req.session.cookie.maxAge]);
+            }
+            return res.redirect('/login/' + row.id);
           }
-          res.redirect('/login/' + row.id);
         }
       }
     );
@@ -387,7 +403,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'secret',
   saveUninitialized: false,
   resave: false,
-  cookie : { httpOnly: true, maxAge: parseInt(process.env.SESSION_MAXAGE) } // configure when sessions expires
+  cookie : { httpOnly: true, maxAge: parseInt(process.env.SESSION_MAXAGE) || 86400000 } // configure when sessions expires
 }));
 app.use(passport.initialize());
 app.use(passport.session());

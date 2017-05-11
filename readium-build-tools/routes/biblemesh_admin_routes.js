@@ -1,4 +1,4 @@
-module.exports = function (app, s3, connection, ensureAuthenticated, log) {
+module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, log) {
 
   var path = require('path');
   var fs = require('fs');
@@ -67,8 +67,26 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
     });
   }
 
+  function deleteBookIfUnassociated(bookId, next, callback) {
+    // clear out book and its user data, if book unassociated
+
+    log(['Check if book is unassociated', bookId]);
+    connection.query('SELECT * FROM `book-idp` WHERE book_id=?',
+      [bookId],
+      function (err, rows, fields) {
+        if (err) return next(err);
+
+        if(rows.length > 0) {
+          callback();
+        } else {
+          deleteBook(bookId, next, callback);
+        }
+      }
+    );
+  }
+
   // delete a book
-  app.delete(['/', '/book/:bookId'], ensureAuthenticated, function (req, res, next) {
+  app.delete(['/', '/book/:bookId'], ensureAuthenticatedAndCheckIDP, function (req, res, next) {
 
     if(!req.user.isAdmin) {
       log('No permission to delete book', 3);
@@ -81,32 +99,37 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
       function (err, result) {
         if (err) return next(err);
 
-        // if book was owned solely by a demo tenant, clear out the book and user data
-
-        // deleteBook(req.params.bookId, next, function() {
-        //   log('Delete successful', 2);
-        //   res.send({ success: true });
-        // });
-
         req.user.bookIds = req.user.bookIds.filter(function(bId) { return bId != parseInt(req.params.bookId); });
 
-        log('Delete (idp disassociation) successful', 2);
-        res.send({ success: true });
+        req.login(req.user, function(err) {
+          if (err) { return next(err); }
 
+          log('Delete (idp disassociation) successful', 2);
+          
+          if(req.user.idpExpire) {  // if it is a temporary demo
+            // if book was owned solely by a demo tenant, delete it
+            deleteBookIfUnassociated(req.params.bookId, next, function() {
+              res.send({ success: true });
+            });
+          } else {
+            res.send({ success: true });
+          }
+          
+        });            
       }
     );
 
   })
 
   // import
-  app.post('/importbook.json', ensureAuthenticated, function (req, res, next) {
+  app.post('/importbook.json', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
 
     if(!req.user.isAdmin) {
       log('No permission to import book', 3);
       res.status(403).send({ errorType: "biblemesh_no_permission" });
       return;
     }
-
+    
     var tmpDir = 'tmp_epub_' + biblemesh_util.getUTCTimeStamp();
     var toUploadDir = tmpDir + '/toupload';
     var epubToS3SuccessCount = 0;
@@ -330,5 +353,75 @@ module.exports = function (app, s3, connection, ensureAuthenticated, log) {
   })
 
 
+  ////////////// CRONS //////////////
+
+  // hourly: clear out all expired demo tenants
+  var runHourlyCron = function() {
+    log('Hourly cron started', 2);
+
+    var next = function(err) {
+      if(err) {
+        throw err;
+      }
+    }
+    var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
+
+    log('Get expired idps');
+    connection.query('SELECT id FROM `idp` WHERE demo_expires_at IS NOT NULL AND demo_expires_at<?',
+      [currentMySQLDatetime],
+      function (err, rows, fields) {
+        if (err) return next(err);
+
+        var expiredIdpIds = rows.map(function(row) { return parseInt(row.id); });
+
+        log('Get books which are owned by the expired idps');
+        connection.query('SELECT book_id FROM `book-idp` WHERE idp_id IN(?)',
+          [expiredIdpIds.concat([0])],
+          function (err2, rows2, fields2) {
+            if (err2) return next(err2);
+
+            var deleteQueries = ['SELECT 1'];  // dummy query, in case there are no idps to delete
+
+            expiredIdpIds.forEach(function(idpId) {
+              log(['Clear out idp tenant', idpId], 2);
+
+              deleteQueries.push('DELETE FROM `book-idp` WHERE idp_id="' + idpId + '"');
+              deleteQueries.push('DELETE FROM `idp` WHERE id="' + idpId + '"');
+              deleteQueries.push('DELETE FROM `highlight` WHERE user_id="' + (idpId * -1) + '"');
+              deleteQueries.push('DELETE FROM `latest_location` WHERE user_id="' + (idpId * -1) + '"');
+            });
+
+            connection.query(deleteQueries.join('; '),
+              function (err3, result3) {
+                if (err3) return next(err3);
+
+                var booksOwnedByDeletedIdps = [];
+                rows2.forEach(function(row2) {
+                  var bookId = parseInt(row2.book_id);
+                  if(booksOwnedByDeletedIdps.indexOf(bookId) == -1) {
+                    booksOwnedByDeletedIdps.push(bookId);
+                  }
+                });
+
+                log(['Books to potentially delete', booksOwnedByDeletedIdps]);
+
+                var handleNextBook = function() {
+                  var nextBookId = booksOwnedByDeletedIdps.pop();
+                  if(nextBookId != undefined) {
+                    deleteBookIfUnassociated(nextBookId, next, handleNextBook);
+                  } else {
+                    log('Hourly cron complete', 2);
+                  }
+                }
+                handleNextBook();
+              }
+            );
+          }
+        );
+      }
+    );
+  }
+
+  setInterval(runHourlyCron, 1000 * 60 * 60);
 
 }

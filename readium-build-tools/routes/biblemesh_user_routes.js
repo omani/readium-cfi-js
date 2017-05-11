@@ -1,4 +1,4 @@
-module.exports = function (app, connection, ensureAuthenticated, log) {
+module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, log) {
 
   var path = require('path');
   var fs = require('fs');
@@ -44,16 +44,19 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
   }
 
   // get current milliseconds timestamp for syncing clock with the client
-  app.get('/usersetup.json', ensureAuthenticated, function (req, res) {
+  app.get('/usersetup.json', ensureAuthenticatedAndCheckIDP, function (req, res) {
     var returnData = {
       userInfo: {
         id: req.user.id,
         firstname: req.user.firstname,
         lastname: req.user.lastname,
+        idpId: req.user.idpId,
         idpName: req.user.idpName,
-        idpLogoSrc: req.user.idpLogoSrc,
-        idpSmallLogoSrc: req.user.idpSmallLogoSrc,
+        idpUseReaderTxt: req.user.idpUseReaderTxt,
+        idpAssetsBaseUrl: 'https://s3-us-west-2.amazonaws.com/' + process.env.S3_BUCKET + '/tenant_assets/',
         idpLang: req.user.idpLang,
+        idpExpire: req.user.idpExpire,
+        idpNoAuth: req.user.idpNoAuth,
         isAdmin: req.user.isAdmin
       },
       currentServerTime: biblemesh_util.getUTCTimeStamp()
@@ -153,14 +156,14 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
   // Accepts GET method to retrieve the app
   // read.biblemesh.com
   // read.biblemesh.com/book/{book_id}
-  app.get(['/', '/book/:bookId'], ensureAuthenticated, function (req, res) {
+  app.get(['/', '/book/:bookId'], ensureAuthenticatedAndCheckIDP, function (req, res) {
     log(['Deliver index for user', req.user]);
     res.sendFile(path.join(process.cwd(), process.env.APP_PATH || '/index.html'))
   })
 
   // Accepts GET method to retrieve a book’s user-data
   // read.biblemesh.com/users/{user_id}/books/{book_id}.json
-  app.get('/users/:userId/books/:bookId.json', ensureAuthenticated, function (req, res, next) {
+  app.get('/users/:userId/books/:bookId.json', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
 
     // build the userData object
     log(['Look up latest location', req.params.userId, req.params.bookId]);
@@ -204,7 +207,7 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
   })
 
   // read.biblemesh.com/users/{user_id}/books/{book_id}.json
-  app.all('/users/:userId/books/:bookId.json', ensureAuthenticated,function (req, res, next) {
+  app.all('/users/:userId/books/:bookId.json', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
     
     if(['PATCH', 'POST'].indexOf(req.method) != -1) {
 
@@ -355,12 +358,12 @@ module.exports = function (app, connection, ensureAuthenticated, log) {
   })
 
   // get epub_library.json with library listing for given user
-  app.get('/epub_content/epub_library.json', ensureAuthenticated, function (req, res, next) {
+  app.get('/epub_content/epub_library.json', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
 
     // look those books up in the database and form the library
     log('Lookup library');
     connection.query('SELECT * FROM `book` WHERE rootUrl IS NOT NULL AND id IN(?)',
-      [req.user.bookIds.concat([-1])],
+      [req.user.bookIds.concat([0])],
       function (err, rows, fields) {
         if (err) return next(err);
 

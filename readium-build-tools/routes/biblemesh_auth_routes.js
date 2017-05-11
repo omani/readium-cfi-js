@@ -35,7 +35,11 @@ module.exports = function (app, passport, authFuncs, connection, ensureAuthentic
   app.get('/logout',
     ensureAuthenticated,
     function (req, res, next) {
-      authFuncs[req.user.idpId].logout(req, res, next);
+      if(authFuncs[req.user.idpId]) {
+        authFuncs[req.user.idpId].logout(req, res, next);
+      } else {
+        res.redirect('/logout/callback');
+      }
     }
   );
 
@@ -56,7 +60,9 @@ module.exports = function (app, passport, authFuncs, connection, ensureAuthentic
       log('Metadata request');
       res.type('application/xml');
       res.status(200).send(
-        authFuncs[req.params.idpId].getMetaData()
+        authFuncs[req.params.idpId]
+         ? authFuncs[req.params.idpId].getMetaData()
+         : ""
       );
     }
   );
