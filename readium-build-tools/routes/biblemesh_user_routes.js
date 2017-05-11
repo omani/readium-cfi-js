@@ -1,4 +1,4 @@
-module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, log) {
+module.exports = function (app, connection, ensureAuthenticatedAndCheckIDPWithRedirect, log) {
 
   var path = require('path');
   var fs = require('fs');
@@ -44,7 +44,7 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, log)
   }
 
   // get current milliseconds timestamp for syncing clock with the client
-  app.get('/usersetup.json', ensureAuthenticatedAndCheckIDP, function (req, res) {
+  app.get('/usersetup.json', ensureAuthenticatedAndCheckIDPWithRedirect, function (req, res) {
     var returnData = {
       userInfo: {
         id: req.user.id,
@@ -156,14 +156,14 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, log)
   // Accepts GET method to retrieve the app
   // read.biblemesh.com
   // read.biblemesh.com/book/{book_id}
-  app.get(['/', '/book/:bookId'], ensureAuthenticatedAndCheckIDP, function (req, res) {
+  app.get(['/', '/book/:bookId'], ensureAuthenticatedAndCheckIDPWithRedirect, function (req, res) {
     log(['Deliver index for user', req.user]);
     res.sendFile(path.join(process.cwd(), process.env.APP_PATH || '/index.html'))
   })
 
   // Accepts GET method to retrieve a book’s user-data
   // read.biblemesh.com/users/{user_id}/books/{book_id}.json
-  app.get('/users/:userId/books/:bookId.json', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
+  app.get('/users/:userId/books/:bookId.json', ensureAuthenticatedAndCheckIDPWithRedirect, function (req, res, next) {
 
     // build the userData object
     log(['Look up latest location', req.params.userId, req.params.bookId]);
@@ -207,7 +207,7 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, log)
   })
 
   // read.biblemesh.com/users/{user_id}/books/{book_id}.json
-  app.all('/users/:userId/books/:bookId.json', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
+  app.all('/users/:userId/books/:bookId.json', ensureAuthenticatedAndCheckIDPWithRedirect, function (req, res, next) {
     
     if(['PATCH', 'POST'].indexOf(req.method) != -1) {
 
@@ -358,7 +358,7 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, log)
   })
 
   // get epub_library.json with library listing for given user
-  app.get('/epub_content/epub_library.json', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
+  app.get('/epub_content/epub_library.json', ensureAuthenticatedAndCheckIDPWithRedirect, function (req, res, next) {
 
     // look those books up in the database and form the library
     log('Lookup library');

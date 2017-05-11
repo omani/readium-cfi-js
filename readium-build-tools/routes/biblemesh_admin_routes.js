@@ -423,5 +423,6 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
   }
 
   setInterval(runHourlyCron, 1000 * 60 * 60);
+  runHourlyCron();
 
 }

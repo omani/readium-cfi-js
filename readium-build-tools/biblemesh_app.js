@@ -30,7 +30,7 @@ var log = function(msgs, importanceLevel) {
     console.log.apply(this, msgs);
   }
 }
-console.log(process.env);
+console.log('ENV >>> ', process.env);
 
 
 ////////////// SETUP STORAGE //////////////
@@ -343,7 +343,7 @@ function ensureAuthenticated(req, res, next) {
           var expiresAt = row.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(row.demo_expires_at);
           if(expiresAt && expiresAt < biblemesh_util.getUTCTimeStamp()) {
             log(['IDP no longer exists (#2)', row.id], 2);
-            return res.status(403).send({ errorType: "This temporary domain has expired." });
+            return res.redirect('https://' + process.env.APP_URL + '?domain_expired=1');
 
           } else if(!row.entryPoint) {
             var defDemoUrlRegExp = new RegExp('^demo\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
