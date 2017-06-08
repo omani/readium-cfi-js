@@ -1,4 +1,4 @@
-module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensureAuthenticatedAndCheckIDPWithRedirect, log) {
+module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensureAuthenticatedAndCheckIDPWithRedirect, embedWebsites, log) {
 
   var path = require('path');
   var fs = require('fs');
@@ -87,7 +87,11 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
         function (err, rows, fields) {
           if (err) return next(err);
 
-          var baseUrl = (req.secure ? 'https' : 'http') + '://' + req.headers.host;
+          var baseUrl = 
+            (req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.REQUIRE_HTTPS
+              ? 'https' 
+              : 'http'
+            ) + '://' + req.headers.host;
           var urlWithEditing = baseUrl + req.originalUrl.replace(/([\?&])editing=1&?/, '$1');
           var abridgedNote = req.query.note || ' ';
           if(abridgedNote.length > 116) {
@@ -157,8 +161,16 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
   // read.biblemesh.com
   // read.biblemesh.com/book/{book_id}
   app.get(['/', '/book/:bookId'], ensureAuthenticatedAndCheckIDPWithRedirect, function (req, res) {
+
+    if(req.query.widget && embedWebsites[req.headers.host]) {
+      log(['Redirect to different idp per embed_website table', req.headers.host, embedWebsites[req.headers.host]]);
+      res.redirect('https://' + embedWebsites[req.headers.host] + req.originalUrl);
+      return;
+    }
+
     log(['Deliver index for user', req.user]);
     res.sendFile(path.join(process.cwd(), process.env.APP_PATH || '/index.html'))
+
   })
 
   // Accepts GET method to retrieve a book’s user-data

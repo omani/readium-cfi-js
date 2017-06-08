@@ -1,4 +1,4 @@
-module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthenticated, log) {
+module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthenticated, embedWebsites, log) {
 
   var path = require('path');
   var fs = require('fs');
@@ -42,7 +42,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
 
   require('./biblemesh_auth_routes')(app, passport, authFuncs, connection, ensureAuthenticated, log);
   require('./biblemesh_admin_routes')(app, s3, connection, ensureAuthenticatedAndCheckIDP, log);
-  require('./biblemesh_user_routes')(app, connection, ensureAuthenticatedAndCheckIDP, ensureAuthenticatedAndCheckIDPWithRedirect, log);
+  require('./biblemesh_user_routes')(app, connection, ensureAuthenticatedAndCheckIDP, ensureAuthenticatedAndCheckIDPWithRedirect, embedWebsites, log);
 
   var getAssetFromS3 = function(req, res, next, notFoundCallback) {
     var urlWithoutQuery = req.url.replace(/(\?.*)?$/, '').replace(/^\/book/,'').replace(/%20/g, ' ');
