@@ -87,7 +87,7 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
         function (err, rows, fields) {
           if (err) return next(err);
 
-          var baseUrl = req.protocol + '://' + req.headers.host;
+          var baseUrl = (req.secure ? 'https' : 'http') + '://' + req.headers.host;
           var urlWithEditing = baseUrl + req.originalUrl.replace(/([\?&])editing=1&?/, '$1');
           var abridgedNote = req.query.note || ' ';
           if(abridgedNote.length > 116) {
