@@ -172,7 +172,7 @@ var strategyCallback = function(idp, profile, done) {
 };
 
 // setup SAML strategies for IDPs
-connection.query('SELECT * FROM `idp`',
+connection.query('SELECT * FROM `idp` WHERE entryPoint IS NOT NULL',
   function (err, rows) {
     if (err) {
       log(["Could not setup IDPs.", err], 3);
