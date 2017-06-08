@@ -259,18 +259,17 @@ function ensureAuthenticated(req, res, next) {
       req.originalUrl.match(/^\/(book\/[^\/]*|\?.*)?$/)
     ))
   ) {  // library or book call
-    if(req.query.widget) {
-      return res.send(`
-        <script>
-          parent.postMessage({
-              action: 'forbidden',
-              iframeid: window.name,
-              payload: 'Unable to display book. You are not logged in.',
-          }, '*');
-        </script>
-      `);
-    
-    }
+    // if(req.query.widget) {
+    //   return res.send(`
+    //     <script>
+    //       parent.postMessage({
+    //           action: 'forbidden',
+    //           iframeid: window.name,
+    //           payload: 'Unable to display book. You are not logged in.',
+    //       }, '*');
+    //     </script>
+    //   `);
+    // }
     
     log('Checking if IDP requires authentication');
     connection.query('SELECT * FROM `idp` WHERE domain=?',
