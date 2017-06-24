@@ -157,20 +157,25 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
 
   })
 
+  // Redirect if embedded and set to be mapped
+  app.get(['/', '/book/:bookId'], function (req, res, next) {
+    if(req.query.widget && req.query.parent_domain) {
+      var embedWebsite = embedWebsites[req.query.parent_domain];
+      if(embedWebsite) {
+        log(['Redirect to different idp per embed_website table', req.query.parent_domain, embedWebsite, req.headers.host]);
+        res.redirect('https://' + embedWebsite + req.originalUrl.replace(/&?parent_domain=[^&]*/, ''));
+        return;
+      }
+    }
+    next();
+  })
+
   // Accepts GET method to retrieve the app
   // read.biblemesh.com
   // read.biblemesh.com/book/{book_id}
   app.get(['/', '/book/:bookId'], ensureAuthenticatedAndCheckIDPWithRedirect, function (req, res) {
-
-    if(req.query.widget && embedWebsites[req.headers.host]) {
-      log(['Redirect to different idp per embed_website table', req.headers.host, embedWebsites[req.headers.host]]);
-      res.redirect('https://' + embedWebsites[req.headers.host] + req.originalUrl);
-      return;
-    }
-
     log(['Deliver index for user', req.user]);
     res.sendFile(path.join(process.cwd(), process.env.APP_PATH || '/index.html'))
-
   })
 
   // Accepts GET method to retrieve a book’s user-data
