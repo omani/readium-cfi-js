@@ -71,7 +71,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
     // clear out book and its user data, if book unassociated
 
     log(['Check if book is unassociated', bookId]);
-    connection.query('SELECT * FROM `book-idp` WHERE book_id=?',
+    connection.query('SELECT * FROM `book-idp` WHERE book_id=? LIMIT 1',
       [bookId],
       function (err, rows, fields) {
         if (err) return next(err);
@@ -79,7 +79,20 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
         if(rows.length > 0) {
           callback();
         } else {
-          deleteBook(bookId, next, callback);
+
+          log(['Check if book is unused', bookId]);
+          connection.query('SELECT * FROM `book_instance` WHERE book_id=? LIMIT 1',
+            [bookId],
+            function (err2, rows2, fields2) {
+              if (err2) return next(err2);
+
+              if(rows2.length > 0) {
+                callback();
+              } else {
+                deleteBook(bookId, next, callback);
+              }
+            }
+          );
         }
       }
     );
@@ -221,6 +234,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
         bookRow = {
           title: 'Unknown',
           author: '',
+          epubSizeInMB: Math.ceil(file.size/1024/1024),
           updated_at: biblemesh_util.timestampToMySQLDatetime()
         };
 
@@ -352,6 +366,89 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
     });
   })
 
+  // usage costs
+  app.get('/usage_costs', ensureAuthenticatedAndCheckIDP, function (req, res, next) {
+
+    if(!req.user.isAdmin) {
+      log('No permission to view usage costs', 3);
+      res.status(403).send({ errorType: "biblemesh_no_permission" });
+      return;
+    }
+
+    var usageReportTemplate = fs.readFileSync(__dirname + '/../templates/biblemesh_usage-report.html', 'utf8')
+    var usageReportMonthTemplate = fs.readFileSync(__dirname + '/../templates/biblemesh_usage-report-month.html', 'utf8')
+    var usageReportRowTemplate = fs.readFileSync(__dirname + '/../templates/biblemesh_usage-report-row.html', 'utf8')
+    var months = '';
+
+    var now = new Date()
+    now.setMonth(now.getMonth() + 1)
+    var monthSets = [];
+
+    for(var i=0; i<(req.query.numMonths || 3); i++) {
+      var toDate = now.getUTCFullYear() + '-' + biblemesh_util.pad(now.getUTCMonth() + 1, 2) + '-01 00:00:00'
+      now.setMonth(now.getMonth() - 1)
+      var fromDate = now.getUTCFullYear() + '-' + biblemesh_util.pad(now.getUTCMonth() + 1, 2) + '-01 00:00:00'
+
+      monthSets.push({
+        fromDate: fromDate,
+        toDate: toDate,
+      })
+    }
+
+    var buildOutMonths = function() {
+
+      if(monthSets.length > 0) {
+        var monthSet = monthSets.shift();
+        
+        log(['Find books', req.user.idpId, monthSet.fromDate, monthSet.toDate]);
+        connection.query(''
+          + 'SELECT book.id, book.title, book.standardPriceInCents, book.epubSizeInMB, COUNT(*) as numUsers '
+          + 'FROM `book_instance` '
+          + 'LEFT JOIN `book` ON (book.id = book_instance.book_id) '
+          + 'WHERE book_instance.idp_id=? AND book_instance.first_given_access_at>?  AND book_instance.first_given_access_at<? '
+          + 'GROUP BY book.id',
+          [req.user.idpId, monthSet.fromDate, monthSet.toDate],
+          function (err, rows, fields) {
+            if (err) return next(err);
+
+            var total = 0;
+            months += usageReportMonthTemplate
+              .replace(/{{month}}/g, monthSet.fromDate.replace(/^([0-9]+-[0-9]+).*$/, '$1'))
+              .replace(/{{rows}}/g, rows.map(function(row) {
+                var standardPrice = parseInt(row.standardPriceInCents || 0)/100;
+                var epubSizeInMB = parseInt(row.epubSizeInMB) || 0;
+                var numUsers = parseInt(row.numUsers);
+                var bookInstanceCost = Math.max(Math.round((epubSizeInMB * 0.0015 + standardPrice * 0.015) * 100) / 100, .05);
+                total += numUsers * bookInstanceCost
+
+                return usageReportRowTemplate
+                  .replace(/{{title}}/g, row.title)
+                  .replace(/{{id}}/g, row.id)
+                  .replace(/{{standardPrice}}/g, '$' + standardPrice.toFixed(2))
+                  .replace(/{{epubSizeInMB}}/g, epubSizeInMB)
+                  .replace(/{{bookInstanceCost}}/g, '$' + bookInstanceCost.toFixed(2))
+                  .replace(/{{numUsers}}/g, numUsers)
+                  .replace(/{{cost}}/g, '$' + (numUsers * bookInstanceCost).toFixed(2))
+              }).join(''))
+              .replace(/{{total}}/g, '$' + (total == 0 ? 0 : Math.max(total, 100).toFixed(2)))
+
+            buildOutMonths()
+          }
+        )
+
+      } else {
+        var usageReport = usageReportTemplate
+          .replace(/{{idp_name}}/g, req.user.idpName)
+          .replace(/{{months}}/, months)
+
+        log('Deliver usage report');
+        res.send(usageReport);
+
+      }
+    }
+
+    buildOutMonths()
+  })
 
   ////////////// CRONS //////////////
 

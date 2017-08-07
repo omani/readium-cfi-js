@@ -113,21 +113,31 @@ var strategyCallback = function(idp, profile, done) {
     bookIds = filteredBookIds;
 
     var completeLogin = function(userId) {
-      log('Login successful', 2);
-      done(null, Object.assign(profile, {
-        id: userId,
-        email: mail,
-        firstname: givenName,
-        lastname: sn,
-        bookIds: bookIds,
-        isAdmin: isAdmin,  // If I change to multiple IDP logins at once, then ensure admins can only be logged into one
-        idpId: idpId,
-        idpName: idp.name,
-        idpUseReaderTxt: !!idp.useReaderTxt,
-        idpLang: idp.language || 'en',
-        idpNoAuth: false,
-        idpExpire: idp.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(idp.demo_expires_at)
-      }));
+
+      var now = biblemesh_util.timestampToMySQLDatetime(null, true);      
+      connection.query('INSERT IGNORE into `book_instance` (??) VALUES ?',
+        [['idp_id', 'book_id', 'user_id', 'first_given_access_at'], bookIds.map(function(bookId) {
+          return [idpId, bookId, userId, now];
+        })],
+        function (err5, results) {
+
+          log('Login successful', 2);
+          done(null, Object.assign(profile, {
+            id: userId,
+            email: mail,
+            firstname: givenName,
+            lastname: sn,
+            bookIds: bookIds,
+            isAdmin: isAdmin,  // If I change to multiple IDP logins at once, then ensure admins can only be logged into one
+            idpId: idpId,
+            idpName: idp.name,
+            idpUseReaderTxt: !!idp.useReaderTxt,
+            idpLang: idp.language || 'en',
+            idpNoAuth: false,
+            idpExpire: idp.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(idp.demo_expires_at)
+          }));
+        }
+      )
     }
 
     connection.query('SELECT id FROM `user` WHERE user_id_from_idp=? AND idp_id=?',
