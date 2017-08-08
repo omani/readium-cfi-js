@@ -231,10 +231,13 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
           return;
         }
 
+        const priceMatch = filename.match(/\$([0-9]+)\.([0-9]{2})(\.[^\.]+)?$/);
+
         bookRow = {
           title: 'Unknown',
           author: '',
           epubSizeInMB: Math.ceil(file.size/1024/1024),
+          standardPriceInCents: priceMatch ? (priceMatch[1] + priceMatch[2]) : null,
           updated_at: biblemesh_util.timestampToMySQLDatetime()
         };
 
@@ -405,7 +408,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
           + 'SELECT book.id, book.title, book.standardPriceInCents, book.epubSizeInMB, COUNT(*) as numUsers '
           + 'FROM `book_instance` '
           + 'LEFT JOIN `book` ON (book.id = book_instance.book_id) '
-          + 'WHERE book_instance.idp_id=? AND book_instance.first_given_access_at>?  AND book_instance.first_given_access_at<? '
+          + 'WHERE book_instance.idp_id=? AND book_instance.first_given_access_at>=?  AND book_instance.first_given_access_at<? '
           + 'GROUP BY book.id',
           [req.user.idpId, monthSet.fromDate, monthSet.toDate],
           function (err, rows, fields) {
