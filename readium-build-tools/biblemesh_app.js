@@ -212,7 +212,7 @@ connection.query('SELECT * FROM `idp` WHERE entryPoint IS NOT NULL',
 
       passport.use(row.id, samlStrategy);
 
-      authFuncs[row.id] = {
+      authFuncs[row.domain] = authFuncs[row.id] = {
         getMetaData: function() {
           return samlStrategy.generateServiceProviderMetadata(row.spcert);
         },

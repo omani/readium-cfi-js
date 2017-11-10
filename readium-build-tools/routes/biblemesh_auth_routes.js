@@ -55,13 +55,25 @@ module.exports = function (app, passport, authFuncs, connection, ensureAuthentic
     }
   );
 
-  app.get('/Shibboleth.sso/:idpId/Metadata', 
+  // app.get('/Shibboleth.sso/:idpId/Metadata', 
+  //   function(req, res) {
+  //     log('Metadata request');
+  //     res.type('application/xml');
+  //     res.status(200).send(
+  //       authFuncs[req.params.idpId]
+  //        ? authFuncs[req.params.idpId].getMetaData()
+  //        : ""
+  //     );
+  //   }
+  // );
+
+  app.get('/Shibboleth.sso/Metadata', 
     function(req, res) {
       log('Metadata request');
       res.type('application/xml');
       res.status(200).send(
-        authFuncs[req.params.idpId]
-         ? authFuncs[req.params.idpId].getMetaData()
+        authFuncs[req.headers.host]
+         ? authFuncs[req.headers.host].getMetaData()
          : ""
       );
     }
