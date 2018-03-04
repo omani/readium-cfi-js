@@ -428,7 +428,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'secret',
   saveUninitialized: false,
   resave: false,
-  cookie : { httpOnly: true, maxAge: parseInt(process.env.SESSION_MAXAGE) || 86400000 } // configure when sessions expires
+  cookie : { httpOnly: false, maxAge: parseInt(process.env.SESSION_MAXAGE) || 86400000 } // configure when sessions expires
 }));
 app.use(passport.initialize());
 app.use(passport.session());
