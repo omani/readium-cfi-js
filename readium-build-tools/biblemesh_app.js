@@ -423,6 +423,12 @@ connection.query('SELECT embed_website.domain, idp.domain as idp_domain FROM `em
 // app.use(cookieParser());
 app.use(bodyParser.json()); // for parsing application/json
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(function(req, res, next) {
+  if(req.headers['x-cookie-override']) {
+    req.headers.cookie = req.headers['x-cookie-override'];
+  }
+  next();
+})
 app.use(session({
   store: new RedisStore(redisOptions),
   secret: process.env.SESSION_SECRET || 'secret',
