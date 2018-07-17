@@ -359,7 +359,7 @@ function ensureAuthenticated(req, res, next) {
             return res.redirect('https://' + process.env.APP_URL + '?domain_expired=1');
 
           } else if(!row.entryPoint) {
-            var defDemoUrlRegExp = new RegExp('^demo\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
+            var defDemoUrlRegExp = new RegExp('^(demo|books)\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
             var idpId = parseInt(row.id);
 
             // the IDP does not require authentication
