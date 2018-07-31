@@ -359,7 +359,8 @@ function ensureAuthenticated(req, res, next) {
             return res.redirect('https://' + process.env.APP_URL + '?domain_expired=1');
 
           } else if(!row.entryPoint) {
-            var defDemoUrlRegExp = new RegExp('^(demo|books)\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$');
+            var isDefDemoUrl = (new RegExp('^demo\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$')).test(req.headers.host);
+            var isDefBooksUrl = (new RegExp('^books\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$')).test(req.headers.host);
             var idpId = parseInt(row.id);
 
             // the IDP does not require authentication
@@ -368,10 +369,10 @@ function ensureAuthenticated(req, res, next) {
               req.login({
                 id: idpId * -1,
                 email: 'demo@toadreader.com',
-                firstname: 'Demo',
+                firstname: isDefBooksUrl ? 'Options' : 'Demo',
                 lastname: 'Account',
                 bookIds: filteredBookIds,
-                isAdmin: !defDemoUrlRegExp.test(req.headers.host),
+                isAdmin: !isDefDemoUrl && !isDefBooksUrl,
                 idpId: idpId,
                 idpName: row.name,
                 idpUseReaderTxt: !!row.useReaderTxt,
