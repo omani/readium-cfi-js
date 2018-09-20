@@ -1,4 +1,4 @@
-Please see https://github.com/AndyHubert/readium-js-viewer for information on this repository.
+Please see https://github.com/educational-resources-and-services/readium-js-viewer for information on this repository.
 
 
 ## License
