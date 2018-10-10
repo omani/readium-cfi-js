@@ -17,7 +17,7 @@ var https = require('https');
 
 //https://github.com/blog/1509-personal-api-tokens
 //https://github.com/settings/tokens
-var ACCESSTOKEN = "fb424e90e36242ab9603034ea906a070c9ce2646";
+var ACCESSTOKEN = "f9ec367b2aa8eb2842272ff2cbafc447febb1c75";
 
 var USERAGENT = "Readium-GitHub";
 
@@ -66,6 +66,7 @@ var checkDiff = function(depSource, upstream, ID) {
     var iSlash = depSource_.indexOf('/');
     if (iSlash >= 0) {
         depSource_ = depSource_.substr(0,iSlash);
+        depSource = depSource.replace("github:", "");
     }
 
 
