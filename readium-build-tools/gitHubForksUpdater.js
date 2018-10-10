@@ -66,7 +66,6 @@ var checkDiff = function(depSource, upstream, ID) {
     var iSlash = depSource_.indexOf('/');
     if (iSlash >= 0) {
         depSource_ = depSource_.substr(0,iSlash);
-        depSource = depSource.replace("github:", "");
     }
 
 
@@ -155,6 +154,7 @@ var scanDeps = function(deps) {
 
     for (var depName in deps) {
         var depSource = deps[depName];
+        depSource = depSource.replace("github:", "");
 
         if (depSource.indexOf("/") == -1) continue;
 
