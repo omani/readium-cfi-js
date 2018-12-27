@@ -8,6 +8,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
   var Entities = require('html-entities').AllHtmlEntities;
   var entities = new Entities();
   var sharp = require('sharp');
+  var fetch = require('node-fetch');
 
   var deleteFolderRecursive = function(path) {
     log(['Delete folder', path], 2);
@@ -455,15 +456,16 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
 
   ////////////// CRONS //////////////
 
+  var next = function(err) {
+    if(err) {
+      throw err;
+    }
+  }
+
   // hourly: clear out all expired demo tenants
   var runHourlyCron = function() {
     log('Hourly cron started', 2);
 
-    var next = function(err) {
-      if(err) {
-        throw err;
-      }
-    }
     var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
 
     log('Get expired idps');
@@ -524,5 +526,104 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
 
   setInterval(runHourlyCron, 1000 * 60 * 60);
   runHourlyCron();
+
+  // every minute: send xapi statements
+  var runMinuteCron = function() {
+    log('Minute cron started', 2);
+
+    // get the tenants (idps)
+    var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
+
+    log('Get idps with xapiOn=true');
+    connection.query('SELECT * FROM `idp` WHERE xapiOn=? AND (demo_expires_at IS NULL OR demo_expires_at>?)',
+      [1, currentMySQLDatetime],
+      function (err, rows) {
+        if (err) return next(err);
+
+        var leftToDo = rows.length;
+
+        var markDone = function() {
+          if(--leftToDo === 0) {
+            log('Minute cron complete', 2);
+          }
+        }
+
+        rows.forEach(function(row) {
+
+          // check configuration
+          if(!row.xapiEndpoint || !row.xapiUsername || !row.xapiPassword || row.xapiMaxBatchSize < 1) {
+            log('The IDP with id #' + row.id + ' has xapi turned on, but it is misconfigured. Skipping.', 3);
+            markDone();
+            return;
+          }
+
+          // get the xapi queue
+          log('Get xapiQueue for idp id #' + row.id);
+          connection.query('SELECT * FROM `xapiQueue` WHERE idp_id=? ORDER BY created_at DESC LIMIT ?',
+            [row.id, row.xapiMaxBatchSize],
+            function (err, statementRows) {
+              if (err) return next(err);
+
+              var statements = [];
+  
+              statementRows.forEach(function(statementRow) {
+                statements.push(JSON.parse(statementRow.statement));
+              });
+
+              if(statements.length > 0) {
+
+                var endpoint = row.xapiEndpoint.replace(/(\/statements|\/)$/, '') + '/statements';
+
+                var options = {
+                  method: 'post',
+                  body: JSON.stringify(statements),
+                  headers: {
+                    'Authorization': 'Basic ' + Buffer.from(row.xapiUsername + ":" + row.xapiPassword).toString('base64'),
+                    'X-Experience-API-Version': '1.0.0',
+                    'Content-Type': 'application/json',
+                  },
+                }
+    
+                // post the xapi statements
+                fetch(endpoint, options)
+                  .then(function(res) {
+                    if(res.status !== 200) {
+                      log(['Bad xapi post for idp id #' + row.id, statements], 3);
+                      markDone();
+                      return;
+                    }
+
+                    log(statements.length + ' xapi statement(s) posted successfully for idp id #' + row.id);
+
+                    var statementIds = [];
+                    statementRows.forEach(function(statementRow) {
+                      statementIds.push(statementRow.id);
+                    });
+          
+                    log('Delete successfully sent statements from xapiQueue queue. Ids: ' + statementIds.join(', '));
+                    connection.query('DELETE FROM `xapiQueue` WHERE id IN(?)', [statementIds], function (err, result) {
+                      if (err) return next(err);
+                      markDone();
+                    });
+          
+                  })
+                  .catch(function(err) {
+                    log('Xapi post failed for idp id #' + row.id, 3);
+                    markDone();
+                  })
+
+              } else {
+                markDone();
+              }
+            }
+          );
+        });
+      }
+    );
+  }
+
+  setInterval(runMinuteCron, 1000 * 60);
+  runMinuteCron();
+
 
 }
