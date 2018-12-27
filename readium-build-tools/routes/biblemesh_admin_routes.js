@@ -458,7 +458,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
 
   var next = function(err) {
     if(err) {
-      throw err;
+      log(err, 3);
     }
   }
 
@@ -472,7 +472,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
     connection.query('SELECT id FROM `idp` WHERE demo_expires_at IS NOT NULL AND demo_expires_at<?',
       [currentMySQLDatetime],
       function (err, rows, fields) {
-        if (err) return next(err);
+        if (err) return log(err, 3);
 
         var expiredIdpIds = rows.map(function(row) { return parseInt(row.id); });
 
@@ -480,7 +480,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
         connection.query('SELECT book_id FROM `book-idp` WHERE idp_id IN(?)',
           [expiredIdpIds.concat([0])],
           function (err2, rows2, fields2) {
-            if (err2) return next(err2);
+            if (err2) return log(err2, 3);
 
             var deleteQueries = ['SELECT 1'];  // dummy query, in case there are no idps to delete
 
@@ -495,7 +495,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
 
             connection.query(deleteQueries.join('; '),
               function (err3, result3) {
-                if (err3) return next(err3);
+                if (err3) return log(err3, 3);
 
                 var booksOwnedByDeletedIdps = [];
                 rows2.forEach(function(row2) {
@@ -528,8 +528,16 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
   runHourlyCron();
 
   // every minute: send xapi statements
+  var minuteCronRunning = false;
   var runMinuteCron = function() {
+
+    if(minuteCronRunning) {
+      log('Minute cron skipped since previous run unfinished.');
+      return;
+    }
+
     log('Minute cron started', 2);
+    minuteCronRunning = true;
 
     // get the tenants (idps)
     var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
@@ -538,13 +546,18 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
     connection.query('SELECT * FROM `idp` WHERE xapiOn=? AND (demo_expires_at IS NULL OR demo_expires_at>?)',
       [1, currentMySQLDatetime],
       function (err, rows) {
-        if (err) return next(err);
+        if (err) {
+          log(err, 3);
+          minuteCronRunning = false;
+          return;
+        }
 
         var leftToDo = rows.length;
 
         var markDone = function() {
           if(--leftToDo === 0) {
             log('Minute cron complete', 2);
+            minuteCronRunning = false;
           }
         }
 
@@ -562,7 +575,11 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
           connection.query('SELECT * FROM `xapiQueue` WHERE idp_id=? ORDER BY created_at DESC LIMIT ?',
             [row.id, row.xapiMaxBatchSize],
             function (err, statementRows) {
-              if (err) return next(err);
+              if (err) {
+                log(err, 3);
+                markDone();
+                return;
+              }
 
               var statements = [];
   
@@ -602,7 +619,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
           
                     log('Delete successfully sent statements from xapiQueue queue. Ids: ' + statementIds.join(', '));
                     connection.query('DELETE FROM `xapiQueue` WHERE id IN(?)', [statementIds], function (err, result) {
-                      if (err) return next(err);
+                      if (err) log(err, 3);
                       markDone();
                     });
           
