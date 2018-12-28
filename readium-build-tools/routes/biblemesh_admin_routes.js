@@ -605,8 +605,10 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
                 fetch(endpoint, options)
                   .then(function(res) {
                     if(res.status !== 200) {
-                      log(['Bad xapi post for idp id #' + row.id, statements], 3);
-                      markDone();
+                      res.json().then(function(json) {
+                        log(['Bad xapi post for idp id #' + row.id, json.warnings || json, JSON.stringify(statements)], 3);
+                        markDone();
+                      })
                       return;
                     }
 
