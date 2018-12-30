@@ -57,7 +57,10 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
         idpLang: req.user.idpLang,
         idpExpire: req.user.idpExpire,
         idpNoAuth: req.user.idpNoAuth,
-        isAdmin: req.user.isAdmin
+        isAdmin: req.user.isAdmin,
+        idpAndroidAppURL: req.user.idpAndroidAppURL,
+        idpXapiOn: req.user.idpXapiOn,
+        idpXapiConsentText: req.user.idpXapiConsentText,
       },
       currentServerTime: biblemesh_util.getUTCTimeStamp()
     }
@@ -87,11 +90,7 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
         function (err, rows, fields) {
           if (err) return next(err);
 
-          var baseUrl = 
-            (req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.REQUIRE_HTTPS
-              ? 'https' 
-              : 'http'
-            ) + '://' + req.headers.host;
+          var baseUrl = biblemesh_util.getBaseUrl(req);
           var urlWithEditing = baseUrl + req.originalUrl.replace(/([\?&])editing=1&?/, '$1');
           var abridgedNote = req.query.note || ' ';
           if(abridgedNote.length > 116) {
@@ -249,11 +248,13 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
   // TODO: lock and unlock tables
 
       connection.query('SELECT * FROM `latest_location` WHERE user_id=? AND book_id=?; '
-        + 'SELECT spineIdRef, cfi, updated_at, IF(note="", 0, 1) as hasnote FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?',
-        [req.params.userId, req.params.bookId, req.params.userId, req.params.bookId, biblemesh_util.NOT_DELETED_AT_TIME],
+        + 'SELECT spineIdRef, cfi, updated_at, IF(note="", 0, 1) as hasnote FROM `highlight` WHERE user_id=? AND book_id=? AND deleted_at=?;'
+        + 'SELECT * FROM `book` WHERE id=?',
+        [req.params.userId, req.params.bookId, req.params.userId, req.params.bookId, biblemesh_util.NOT_DELETED_AT_TIME, req.params.bookId],
         function (err, results) {
           if (err) return next(err);
 
+          var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime();
           var queriesToRun = [];
 
           var currentHighlightsUpdatedAtTimestamp = {};
@@ -337,6 +338,23 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
                   query: 'INSERT into `highlight` SET ?',
                   vars: highlight
                 });
+                if(req.user.idpXapiOn && results[2].length > 0) {
+                  queriesToRun.push({
+                    query: 'INSERT into `xapiQueue` SET ?',
+                    vars: {
+                      idp_id: req.user.idpId,
+                      statement: biblemesh_util.getAnnotateStatement({
+                        req: req,
+                        bookId: highlight.book_id,
+                        bookTitle: results[2][0].title,
+                        bookISPN: results[2][0].ispn,
+                        spineIdRef: highlight.spineIdRef,
+                        datetime: highlight.updated_at,
+                      }),
+                      created_at: currentMySQLDatetime,
+                    },
+                  });
+                }
               }
             })
           }

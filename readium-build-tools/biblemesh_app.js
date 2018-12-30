@@ -134,7 +134,11 @@ var strategyCallback = function(idp, profile, done) {
             idpUseReaderTxt: !!idp.useReaderTxt,
             idpLang: idp.language || 'en',
             idpNoAuth: false,
-            idpExpire: idp.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(idp.demo_expires_at)
+            idpExpire: idp.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(idp.demo_expires_at),
+            idpAndroidAppURL: idp.androidAppURL,
+            idpIosAppURL: idp.iosAppURL,
+            idpXapiOn: idp.xapiOn,
+            idpXapiConsentText: idp.xapiConsentText,
           }));
         }
       )
@@ -256,7 +260,11 @@ function ensureAuthenticated(req, res, next) {
         idpUseReaderTxt: false,
         idpLang: 'en',
         idpNoAuth: true,
-        idpExpire: false
+        idpExpire: false,
+        idpXapiOn: 1,
+        idpAndroidAppURL: "https://play.google.com",
+        idpIosAppURL: "https://itunes.apple.com",
+        idpXapiConsentText: "Sure?",
       }
       return next();
     });
@@ -378,7 +386,11 @@ function ensureAuthenticated(req, res, next) {
                 idpUseReaderTxt: !!row.useReaderTxt,
                 idpLang: row.language || 'en',
                 idpNoAuth: true,
-                idpExpire: expiresAt
+                idpExpire: expiresAt,
+                idpAndroidAppURL: row.androidAppURL,
+                idpIosAppURL: row.iosAppURL,
+                idpXapiOn: row.xapiOn,
+                idpXapiConsentText: row.xapiConsentText,
               }, function(err) {
                 if (err) { return next(err); }
                 return next();
