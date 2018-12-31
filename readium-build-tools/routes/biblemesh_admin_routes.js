@@ -157,8 +157,10 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
 
         // insert the book row
         bookRow.author = bookRow.creator || bookRow.publisher || '';
+        bookRow.isbn = bookRow.identifier || '';
         delete bookRow.creator;
         delete bookRow.publisher;
+        delete bookRow.identifier;
         log(['Update book row', bookRow], 2);
         connection.query('UPDATE `book` SET ? WHERE id=?', [bookRow, bookRow.id], function (err, result) {
           if (err) {
@@ -237,6 +239,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
         bookRow = {
           title: 'Unknown',
           author: '',
+          isbn: '',
           epubSizeInMB: Math.ceil(file.size/1024/1024),
           standardPriceInCents: priceMatch ? (priceMatch[1] + priceMatch[2]) : null,
           updated_at: biblemesh_util.timestampToMySQLDatetime()
@@ -301,7 +304,7 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
                           if(matches) {
                             var opfContents = fs.readFileSync(toUploadDir + '/' + matches[1], "utf-8");
 
-                            ['title','creator','publisher'].forEach(function(dcTag) {
+                            ['title','creator','publisher','identifier'].forEach(function(dcTag) {
                               var dcTagRegEx = new RegExp('<dc:' + dcTag + '[^>]*>([^<]+)</dc:' + dcTag + '>');
                               var opfPathMatches1 = opfContents.match(dcTagRegEx);
                               if(opfPathMatches1) {
