@@ -41,11 +41,11 @@ var getXapiContext = function(params) {
   var appURI = biblemesh_util.getBaseUrl(params.req);
 
   if(params.platform === 'ios') {
-    appURI = req.user.idpIosAppURL;
+    appURI = req.user.idpIosAppURL || "https://itunes.apple.com";
   }
   
   if(params.platform === 'android') {
-    appURI = req.user.idpAndroidAppURL;
+    appURI = req.user.idpAndroidAppURL || "https://play.google.com";
   }
 
   return {
