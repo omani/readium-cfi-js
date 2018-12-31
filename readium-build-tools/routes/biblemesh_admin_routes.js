@@ -25,7 +25,6 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
     }
   };
 
-
   function emptyS3Folder(params, callback){
     log(['Empty S3 folder', params], 2);
     s3.listObjects(params, function(err, data) {
@@ -151,31 +150,96 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
     var bookRow;
 
     var checkDone = function() {
-      if(epubToS3SuccessCount == epubFilePaths.length) {
+      if(epubToS3SuccessCount == epubFilePaths.length + (bookRow.coverHref ? 1 : 0)) {
         // clean up
         deleteFolderRecursive(tmpDir);
 
-        // insert the book row
+        // prep to insert the book row
         bookRow.author = bookRow.creator || bookRow.publisher || '';
         bookRow.isbn = bookRow.identifier || '';
         delete bookRow.creator;
         delete bookRow.publisher;
         delete bookRow.identifier;
-        log(['Update book row', bookRow], 2);
-        connection.query('UPDATE `book` SET ? WHERE id=?', [bookRow, bookRow.id], function (err, result) {
-          if (err) {
-            return next(err);
-          }
-          
-          req.user.bookIds.push(parseInt(bookRow.id));
-  
-          log('Import successful', 2);
-          res.send({
-            success: true,
-            bookId: bookRow.id
-          });
-        })
 
+        // check if book already exists in same idp group
+        log('Look for identical book in idp group');
+        connection.query(''
+          + 'SELECT b.id, IF(bi.idp_id=?, 1, 0) as alreadyBookInThisIdp '
+          + 'FROM `book` as b '
+          + 'LEFT JOIN `book-idp` as bi ON (b.id = bi.book_id) '
+          + 'LEFT JOIN `idp_group_member` as igm1 ON (bi.idp_id = igm1.idp_id) '
+          + 'LEFT JOIN `idp_group_member` as igm2 ON (igm1.idp_group_id = igm2.idp_group_id) '
+          + 'WHERE b.title=? AND b.author=? AND b.isbn=? '
+          + 'AND (bi.idp_id=? OR igm2.idp_id=?) '
+          + 'ORDER BY alreadyBookInThisIdp DESC '
+          + 'LIMIT 1 ',
+          [req.user.idpId, bookRow.title, bookRow.author, bookRow.isbn, req.user.idpId, req.user.idpId],
+          function (err, rows, fields) {
+            if (err) return next(err);
+
+            if(rows.length === 1) {
+
+              // delete book
+              deleteBook(bookRow.id, next, function() {
+
+                log('DELETE book-idp row', 2);
+                connection.query('DELETE FROM `book-idp` WHERE book_id=? AND idp_id=?',
+                  [bookRow.id, req.user.idpId],
+                  function (err, results) {
+                    if (err) return next(err);
+
+                    if(rows[0].alreadyBookInThisIdp == '1') {
+                      log('Import unnecessary (book already associated with this idp)', 2);
+                      res.send({
+                        success: true,
+                        note: 'already-associated',
+                        bookId: rows[0].id
+                      });
+                    } else {
+                      var bookIdpParams = {
+                        book_id: rows[0].id,
+                        idp_id: req.user.idpId
+                      };
+                      log(['INSERT book-idp row', bookIdpParams], 2);
+                      connection.query('INSERT INTO `book-idp` SET ?',
+                        bookIdpParams,
+                        function (err, results) {
+                          if (err) return next(err);
+
+                          log('Import unnecessary (book exists in idp with same group; added association)', 2);
+                          res.send({
+                            success: true,
+                            note: 'associated-to-existing',
+                            bookId: rows[0].id
+                          });
+          
+                        }
+                      );
+                    }
+                  }
+                );
+                
+              });
+
+              return;
+            }            
+            
+            log(['Update book row', bookRow], 2);
+            connection.query('UPDATE `book` SET ? WHERE id=?', [bookRow, bookRow.id], function (err, result) {
+              if (err) {
+                return next(err);
+              }
+              
+              req.user.bookIds.push(parseInt(bookRow.id));
+      
+              log('Import successful', 2);
+              res.send({
+                success: true,
+                bookId: bookRow.id
+              });
+            })
+          }
+        );
       }
     }
     
