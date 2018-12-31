@@ -311,6 +311,7 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
                 return;
               }
 
+              var updatedAtTimestamp = highlight.updated_at;
               highlight.updated_at = biblemesh_util.timestampToMySQLDatetime(highlight.updated_at, true);
               // since I do not know whether to INSERT or UPDATE, just DELETE them all then then INSERT
               if(highlight._delete) {
@@ -347,9 +348,9 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
                         req: req,
                         bookId: highlight.book_id,
                         bookTitle: results[2][0].title,
-                        bookISPN: results[2][0].ispn,
+                        bookISBN: results[2][0].isbn,
                         spineIdRef: highlight.spineIdRef,
-                        datetime: highlight.updated_at,
+                        timestamp: updatedAtTimestamp,
                       }),
                       created_at: currentMySQLDatetime,
                     },

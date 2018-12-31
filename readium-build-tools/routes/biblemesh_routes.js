@@ -105,6 +105,8 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
       function (err, rows, fields) {
         if (err) return next(err);
 
+        req.book = rows[0];
+
         if(rows[0] && rows[0].coverHref == urlWithoutQuery.replace(/^\//,'')) {
           log('Is book cover');
           getAssetFromS3(req, res, next);
@@ -185,8 +187,33 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
       if(req.user.bookIds.indexOf(bookId) == -1) {
         log(['They do not have access to this book', bookId], 2);
         res.status(403).send({ error: 'Forbidden' });
+
       } else {
-        getAssetFromS3(req, res, next);
+        // if it is full epub download and idp has xapi on, create an xapi statement
+        if(req.user.idpXapiOn && urlPieces.length === 4 && urlPieces[3] === 'book.epub' && req.book) {
+          var currentTimestamp = Date.now();
+          var currentMySQLDatetime = biblemesh_util.timestampToMySQLDatetime(currentTimestamp);
+          connection.query('INSERT into `xapiQueue` SET ?',
+            {
+              idp_id: req.user.idpId,
+              statement: biblemesh_util.getDownloadStatement({
+                req: req,
+                bookId: bookId,
+                bookTitle: req.book.title,
+                bookISBN: req.book.isbn,
+                timestamp: currentTimestamp,
+              }),
+              created_at: currentMySQLDatetime,
+            },
+            function (err, results) {
+              if (err) return done(err);
+
+              getAssetFromS3(req, res, next);
+            }
+          );
+        } else {
+          getAssetFromS3(req, res, next);
+        }
       }
 
     } else if(process.env.IS_DEV || ['css','fonts','images','scripts'].indexOf(urlPieces[1]) != -1) {

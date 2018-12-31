@@ -157,7 +157,7 @@ var biblemesh_util = {
       "result": {
         "duration": "P3Y6M4DT12H30M5S",
       },
-      "timestamp": biblemesh_util.timestampToISO(params.datetime),
+      "timestamp": biblemesh_util.timestampToISO(params.timestamp),
       "context": getXapiContext(params),
     });
   },
@@ -172,7 +172,7 @@ var biblemesh_util = {
         }
       },
       "object": getXapiObject(params),
-      "timestamp": biblemesh_util.timestampToISO(params.datetime),
+      "timestamp": biblemesh_util.timestampToISO(params.timestamp),
       "context": getXapiContext(params),
     });
   },
@@ -187,7 +187,7 @@ var biblemesh_util = {
         }
       },
       "object": getXapiObject(params),
-      "timestamp": biblemesh_util.timestampToISO(params.datetime),
+      "timestamp": biblemesh_util.timestampToISO(params.timestamp),
       "context": getXapiContext(params),
     });
   },
