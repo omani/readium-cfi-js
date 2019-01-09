@@ -622,10 +622,15 @@ module.exports = function (app, s3, connection, ensureAuthenticatedAndCheckIDP, 
         var leftToDo = rows.length;
 
         var markDone = function() {
-          if(--leftToDo === 0) {
+          if(--leftToDo <= 0) {
             log('Minute cron complete', 2);
             minuteCronRunning = false;
           }
+        }
+
+        if(rows.length === 0) {
+          markDone();
+          return;
         }
 
         rows.forEach(function(row) {
