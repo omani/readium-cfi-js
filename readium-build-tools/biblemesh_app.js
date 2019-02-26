@@ -38,11 +38,11 @@ var log = function(msgs, importanceLevel) {
 var s3 = new AWS.S3();
 
 var connection = mysql.createConnection({
-  host: process.env.RDS_HOSTNAME,
-  port: process.env.RDS_PORT,
-  user: process.env.RDS_USERNAME,
-  password: process.env.RDS_PASSWORD,
-  database: process.env.RDS_DB_NAME,
+  host: process.env.OVERRIDE_RDS_HOSTNAME || process.env.RDS_HOSTNAME,
+  port: process.env.OVERRIDE_RDS_PORT || process.env.RDS_PORT,
+  user: process.env.OVERRIDE_RDS_USERNAME || process.env.RDS_USERNAME,
+  password: process.env.OVERRIDE_RDS_PASSWORD || process.env.RDS_PASSWORD,
+  database: process.env.OVERRIDE_RDS_DB_NAME || process.env.RDS_DB_NAME,
   multipleStatements: true,
   dateStrings: true
 })
