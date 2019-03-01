@@ -398,8 +398,12 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
 
     // look those books up in the database and form the library
     log('Lookup library');
-    connection.query('SELECT * FROM `book` WHERE rootUrl IS NOT NULL AND id IN(?)',
-      [req.user.bookIds.concat([0])],
+    connection.query(''
+      + 'SELECT b.*, bi.link_href, bi.link_label '
+      + 'FROM `book` as b '
+      + 'LEFT JOIN `book-idp` as bi ON (b.id=bi.book_id) '
+      + 'WHERE b.rootUrl IS NOT NULL AND bi.idp_id=? AND b.id IN(?)',
+      [req.user.idpId, req.user.bookIds.concat([0])],
       function (err, rows, fields) {
         if (err) return next(err);
 
