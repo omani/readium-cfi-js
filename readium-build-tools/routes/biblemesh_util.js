@@ -1,3 +1,5 @@
+var moment = require('moment');
+
 var getXapiActor = function(params) {
   return {
     "name": params.req.user.firstname + " " + params.req.user.lastname,
@@ -129,6 +131,11 @@ var biblemesh_util = {
     return date.toISOString();
   },
 
+  secondsToDuration: function(seconds) {
+    return moment.duration(seconds, 'seconds').toISOString();
+    // Eg. P3Y6M4DT12H30M5S
+  },
+
   pad: function(num, size) {
     var s = num+"";
     while (s.length < size) s = "0" + s;
@@ -155,7 +162,7 @@ var biblemesh_util = {
       },
       "object": getXapiObject(params),
       "result": {
-        "duration": "P3Y6M4DT12H30M5S",
+        "duration": biblemesh_util.secondsToDuration(params.durationInSeconds),
       },
       "timestamp": biblemesh_util.timestampToISO(params.timestamp),
       "context": getXapiContext(params),

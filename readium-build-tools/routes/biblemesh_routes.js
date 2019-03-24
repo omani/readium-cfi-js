@@ -203,6 +203,7 @@ module.exports = function (app, s3, connection, passport, authFuncs, ensureAuthe
                 bookISBN: req.book.isbn,
                 timestamp: currentTimestamp,
               }),
+              unique_tag: Date.now(),  // not worried about dups here
               created_at: currentMySQLDatetime,
             },
             function (err, results) {
