@@ -72,7 +72,7 @@ var getXapiContext = function(params) {
           "definition": {
             "type": "http://id.tincanapi.com/activitytype/source",
             "name": {
-              "en-gb": "Toad Reaer"
+              "en-gb": "Toad Reader"
             }
           },
           "objectType": "Activity"
