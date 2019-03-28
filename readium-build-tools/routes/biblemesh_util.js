@@ -41,13 +41,17 @@ var getXapiObject = function(params) {
 
 var getXapiContext = function(params) {
   var appURI = biblemesh_util.getBaseUrl(params.req);
+  var platform =
+    params.req
+    && params.req.headers
+    && params.req.headers['x-platform']
 
-  if(params.platform === 'ios') {
-    appURI = req.user.idpIosAppURL || "https://itunes.apple.com";
+  if(platform === 'ios') {
+    appURI = params.req.user.idpIosAppURL || "https://itunes.apple.com";
   }
   
-  if(params.platform === 'android') {
-    appURI = req.user.idpAndroidAppURL || "https://play.google.com";
+  if(platform === 'android') {
+    appURI = params.req.user.idpAndroidAppURL || "https://play.google.com";
   }
 
   return {
@@ -60,7 +64,7 @@ var getXapiContext = function(params) {
           "definition": {
             "type": "http://activitystrea.ms/schema/1.0/application",
             "name": {
-              "en-gb": "BibleMesh Reader (" + (params.platform || 'web') + ")"
+              "en-gb": "BibleMesh Reader (" + (platform || 'web') + ")"
             }
           },
           "objectType": "Activity"
