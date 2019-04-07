@@ -256,7 +256,7 @@ function ensureAuthenticated(req, res, next) {
         bookIds: filteredBookIds,
         isAdmin: true,
         idpId: fakeIdpId,
-        idpName: 'ToadReader',
+        idpName: 'Toad Reader',
         idpUseReaderTxt: false,
         idpLang: 'en',
         idpNoAuth: true,

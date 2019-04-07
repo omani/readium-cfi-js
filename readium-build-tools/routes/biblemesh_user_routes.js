@@ -59,6 +59,7 @@ module.exports = function (app, connection, ensureAuthenticatedAndCheckIDP, ensu
         idpNoAuth: req.user.idpNoAuth,
         isAdmin: req.user.isAdmin,
         idpAndroidAppURL: req.user.idpAndroidAppURL,
+        idpIosAppURL: req.user.idpIosAppURL,
         idpXapiOn: req.user.idpXapiOn,
         idpXapiConsentText: req.user.idpXapiConsentText,
       },
