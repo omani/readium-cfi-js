@@ -4,7 +4,7 @@ var express = require('express');
 var app = express();
 var http = require('http');
 var bodyParser = require('body-parser');
-// var cookieParser = require('cookie-parser');
+var cookieParser = require('cookie-parser');
 var path = require('path');
 var mysql = require('mysql');
 var AWS = require('aws-sdk');
@@ -14,6 +14,7 @@ var passport = require('passport');
 var saml = require('passport-saml');
 require('dotenv').load();  //loads the local environment
 var biblemesh_util = require('./routes/biblemesh_util');
+const jwt = require('jsonwebtoken');
 
 
 ////////////// SETUP SERVER //////////////
@@ -222,7 +223,11 @@ connection.query('SELECT * FROM `idp` WHERE entryPoint IS NOT NULL',
         },
         logout: function(req, res, next) {
           log(['Logout', req.user], 2);
-          if(req.user.nameID && req.user.nameIDFormat) {
+          if(row.sessionSharingAsRecipientInfo) {
+            log('Redirect to session-sharing SLO');
+            res.redirect(row.sessionSharingAsRecipientInfo.logoutUrl || '/session-sharing-setup-error');
+
+          } else if(req.user.nameID && req.user.nameIDFormat) {
             log('Redirect to SLO');
             samlStrategy.logout(req, function(err2, req2){
               if (err2) return next(err2);
@@ -361,10 +366,59 @@ function ensureAuthenticated(req, res, next) {
 
           }
         } else {
+
+          var sessionSharingAsRecipientInfo;
+
+          try {
+            var sessionSharingAsRecipientInfo = JSON.parse(row.sessionSharingAsRecipientInfo);
+          } catch(e) {}
+
           var expiresAt = row.demo_expires_at && biblemesh_util.mySQLDatetimeToTimestamp(row.demo_expires_at);
           if(expiresAt && expiresAt < biblemesh_util.getUTCTimeStamp()) {
             log(['IDP no longer exists (#2)', row.id], 2);
             return res.redirect('https://' + process.env.APP_URL + '?domain_expired=1');
+
+          } else if(sessionSharingAsRecipientInfo) {
+
+            try {
+
+              var token = jwt.verify(req.cookies[sessionSharingAsRecipientInfo.cookie], sessionSharingAsRecipientInfo.secret);
+              var idpId = parseInt(row.id);
+              var isAdmin =
+                !!token.isAdmin ||
+                row.adminUserEmails.toLowerCase().split(' ').indexOf(token.email.toLowerCase()) != -1 ||
+                process.env.ADMIN_EMAILS.toLowerCase().split(' ').indexOf(token.email.toLowerCase()) != -1;
+              var namePieces = token.fullname.split(' ');
+
+              // the IDP does not require authentication
+              log('Logging in with session-sharing', 2);
+              filterBookIdsByIDPs([], [idpId], true, next, function(filteredBookIds) {
+                req.login({
+                  id: idpId * -1,
+                  email: token.email,
+                  firstname: namePieces[0],
+                  lastname: namePieces.slice(1).join(' '),
+                  bookIds: ((token.bookIds === 'all' || sessionSharingAsRecipientInfo.universalBookAccess) ? filteredBookIds : token.bookIds) || [],
+                  isAdmin: isAdmin,
+                  idpId: idpId,
+                  idpName: row.name,
+                  idpUseReaderTxt: !!row.useReaderTxt,
+                  idpLang: row.language || 'en',
+                  idpNoAuth: true,
+                  idpExpire: expiresAt,
+                  idpAndroidAppURL: row.androidAppURL,
+                  idpIosAppURL: row.iosAppURL,
+                  idpXapiOn: row.xapiOn,
+                  idpXapiConsentText: row.xapiConsentText,
+                }, function(err) {
+                  if (err) { return next(err); }
+                  return next();
+                });
+              });
+
+            } catch(e) {
+              res.redirect(sessionSharingAsRecipientInfo.loginUrl || '/session-sharing-setup-error');
+            }
 
           } else if(!row.entryPoint) {
             var isDefDemoUrl = (new RegExp('^demo\\.' + process.env.APP_URL.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + '$')).test(req.headers.host);
@@ -433,7 +487,6 @@ connection.query('SELECT embed_website.domain, idp.domain as idp_domain FROM `em
 
 // see http://stackoverflow.com/questions/14014446/how-to-save-and-retrieve-session-from-redis
 
-// app.use(cookieParser());
 app.use(bodyParser.json()); // for parsing application/json
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(function(req, res, next) {
@@ -442,6 +495,7 @@ app.use(function(req, res, next) {
   }
   next();
 })
+app.use(cookieParser());
 app.use(session({
   store: new RedisStore(redisOptions),
   secret: process.env.SESSION_SECRET || 'secret',
