@@ -74,7 +74,7 @@ function(thiz){
 
     if (typeof process.env['RJS_UGLY'] !== "undefined") {
         var ugly = process.env['RJS_UGLY'];
-        ugly = ugly.toLowerCase();
+                ugly = ugly.toLowerCase();
         if (ugly === "false" || ugly === "no") {
             process._RJS_isUgly = false;
         } else {
@@ -85,7 +85,12 @@ function(thiz){
     for (var k = 1; k < args.length; k++) {
         var parameter = args[k];
 
-        var token = "--rjs_bundle=";
+        var token = "--rjs_noUgly=";
+        if (parameter.indexOf(token) == 0) {
+            process._RJS_isUgly = false;
+        }
+
+        token = "--rjs_bundle=";
         if (parameter.indexOf(token) == 0) {
 
              // single or multiple bundle target
