@@ -64,7 +64,7 @@
     "node-fetch": "2.3.0",
     "passport": "0.3.2",
     "passport-saml": "0.15.0",
-    "sharp": "0.17.2"
+    "sharp": "0.29.3"
   },
   "devDependencies": {
     "requirejs": "latest",
